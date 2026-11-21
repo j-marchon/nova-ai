@@ -239,3 +239,12 @@ describe("reading the card for its cast", () => {
     expect(newFromCard(found, scope, mira, "Ana").map((f) => f.name)).toEqual(["Tobias"]);
   });
 });
+
+describe("who speaks in a reply", () => {
+  it("reads the **Name:** labels in order, each once", async () => {
+    const { replySpeakers } = await import("../src/lib/scope.js");
+    expect(replySpeakers("**Mira:** Hi.\n\n**Tom:** Hey.\n**Mira:** Again.")).toEqual(["Mira", "Tom"]);
+    expect(replySpeakers("Just Mira talking, **bold:** in the middle")).toEqual([]);
+    expect(replySpeakers("")).toEqual([]);
+  });
+});

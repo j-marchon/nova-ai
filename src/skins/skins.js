@@ -1,4 +1,5 @@
 import { createElement } from "react";
+import NOVA_SCENES from "./scenes/nova.json";
 import { isPackId, readPack } from "./pack.js";
 import { installedSkins, onSkinsChange, packBytes } from "./store.js";
 import { SkinBackground, SkinSplash } from "./Scene.jsx";
@@ -21,7 +22,21 @@ import { installEffects } from "./effects.js";
    restored backup without its skins, a removed skin) shows the standard
    look; the pick itself is kept, so it comes back when the skin is added. */
 
-export const STANDARD = { id: "nova", name: "Nova", note: "The standard look", swatch: "linear-gradient(135deg, oklch(0.2 0 0), oklch(0 0 0) 70%)" };
+export const STANDARD = { id: "nova", name: "Nova", note: "The standard look", swatch: "radial-gradient(60% 80% at 70% 45%, oklch(0.75 0 0), oklch(0.18 0 0) 45%, oklch(0 0 0) 80%)" };
+/* Nova's own backgrounds: layered night scenes,
+   served beside the app at scenes/nova/ */
+const NOVA_SCENE_BASE = () => `${import.meta.env?.BASE_URL || "/"}scenes/nova/`;
+
+/* The layered scenes a skin draws behind every screen, or null: Nova's
+   own, or a pack's once it has loaded. { scenes, base }. A component pass
+   useLoadedSkins() as `rev`, so it reads again when a pack finishes loading
+   (the compiler memoises calls by their arguments). */
+export function sceneSetOf(id, rev = 0) { // eslint-disable-line no-unused-vars
+  if (id === "nova") return { scenes: NOVA_SCENES, base: NOVA_SCENE_BASE() };
+  const scenes = loaded.get(id)?.scenes;
+  return scenes?.length ? { scenes, base: "" } : null;
+}
+
 /* plain: no grid, grain, background picture or ambient light */
 export const MINIMAL = { id: "minimal", name: "Minimal", note: "Plain black, no grain or effects", swatch: "oklch(0 0 0)", scheme: "dark", surface: true, plain: true };
 const BUILT_IN = [STANDARD, MINIMAL];
@@ -73,6 +88,12 @@ export function storedSkin() {
 }
 
 const loaded = new Map();
+/* a pack finishing loading, for components (useLoadedSkins in useSkin.js) */
+let loadedRev = 0;
+const loadedListeners = new Set();
+export const onSkinsLoaded = (fn) => { loadedListeners.add(fn); return () => loadedListeners.delete(fn); };
+export const loadedRevision = () => loadedRev;
+const markLoaded = () => { loadedRev++; for (const fn of loadedListeners) fn(); };
 const pending = new Map();
 
 /* the worn skin's parts, once loaded (null for the standard look):
@@ -94,7 +115,9 @@ function build(pack) {
   }
   el.textContent = pack.css;
   const mod = { pack };
-  if (pack.background) mod.Background = (props) => createElement(SkinBackground, { ...props, spec: pack.background });
+  if (pack.background?.root) mod.Background = (props) => createElement(SkinBackground, { ...props, spec: pack.background });
+  /* a pack's layered scenes are drawn by LayeredScene (App.jsx) */
+  if (pack.background?.scenes?.length) mod.scenes = pack.background.scenes;
   if (pack.splash) mod.Splash = (props) => createElement(SkinSplash, { ...props, spec: pack.splash });
   mod.install = () => installEffects(pack.effects);
   return mod;
@@ -107,7 +130,7 @@ export function loadSkin(id) {
     const job = packBytes(id).then((bytes) => {
       if (!bytes) throw new Error(`The ${id} skin is not on this device.`);
       const mod = build(readPack(bytes));
-      if (pending.get(id) === job) { loaded.set(id, mod); pending.delete(id); }
+      if (pending.get(id) === job) { loaded.set(id, mod); pending.delete(id); markLoaded(); }
       return mod;
     }, (error) => { throw error; });
     job.catch(() => { if (pending.get(id) === job) pending.delete(id); });

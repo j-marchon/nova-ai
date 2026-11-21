@@ -5,7 +5,7 @@ import android.os.Bundle;
 import android.webkit.WebView;
 import com.getcapacitor.BridgeActivity;
 
-public class MainActivity extends BridgeActivity {
+public class NovaActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         /* finds Nova Bridge on the Wi-Fi; see NovaLanPlugin */
@@ -14,6 +14,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(NovaHttpPlugin.class);
         /* the back gesture, followed by the page as it happens; see NovaBackPlugin */
         registerPlugin(NovaBackPlugin.class);
+        /* the launcher icon follows the skin; see NovaIconPlugin */
+        registerPlugin(NovaIconPlugin.class);
         super.onCreate(savedInstanceState);
     }
 

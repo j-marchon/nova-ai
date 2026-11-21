@@ -1053,10 +1053,24 @@ const CHAT = {
 
 /* ---------- Sign-in flows ---------- */
 
+/* The desktop app hands the Bridge its own way of opening a link (Electron's
+   shell.openExternal), which finds the browser the way the desktop does;
+   run on its own, the Bridge uses the system's opener. A failure is kept
+   and shown, and the Bridge window's Open button tries again. */
+let opener = null;
+export function bridgeSetOpener(fn) { opener = typeof fn === "function" ? fn : null; }
+function systemOpen(url) {
+  const done = (e) => { if (e) console.warn(`   Could not open the browser: ${e.message}`); };
+  if (process.platform === "win32") execFile("cmd", ["/c", "start", "", url], done);
+  else if (process.platform === "darwin") execFile("open", [url], done);
+  else execFile("xdg-open", [url], done);
+}
 function openBrowser(url) {
-  if (process.platform === "win32") execFile("cmd", ["/c", "start", "", url], () => {});
-  else if (process.platform === "darwin") execFile("open", [url], () => {});
-  else execFile("xdg-open", [url], () => {});
+  if (!opener) return systemOpen(url);
+  Promise.resolve().then(() => opener(url)).catch((e) => {
+    console.warn(`   Could not open the browser (${e?.message || e}); trying the system's opener.`);
+    systemOpen(url);
+  });
 }
 
 const signedIn = (id, entry) => {
@@ -1129,7 +1143,9 @@ function startGoogleOAuth(channel, { local = true } = {}) {
   auth.searchParams.set("access_type", "offline");
   auth.searchParams.set("prompt", "consent");
   /* a phone needs time to copy the address back */
-  const flow = { status: "pending", url: auth.toString(), expires_at: Date.now() + 10 * 60000, verifier, state, redirectUri };
+  const flow = { status: "pending", url: auth.toString(), expires_at: Date.now() + 10 * 60000, verifier, state, redirectUri,
+    /* shown in the Bridge window, with Open beside it */
+    message: "Sign in to Google in your browser. No browser? Press Open." };
 
   const cb = http.createServer(async (req, res) => {
     const u = new URL(req.url, "http://localhost");

@@ -179,12 +179,14 @@ function nativeFs() {
   return globalThis.window?.Capacitor?.isNativePlatform?.() ? window.Capacitor.Plugins?.Filesystem || null : null;
 }
 
+/* the names credentials go by anywhere in settings */
+export const CREDENTIAL_KEY = /^(key|api_?key|googleKey|bridgeKey|access_?token|refresh_?token|token|password|secret|authorization)$/i;
+
 // Backups may contain nested voice/image provider settings as well as chat keys.
 export function redactCredentials(value) {
   if (Array.isArray(value)) return value.map(redactCredentials);
   if (!value || typeof value !== "object") return value;
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [key,
-    /^(key|api_?key|googleKey|bridgeKey|access_?token|refresh_?token|token|password|secret|authorization)$/i.test(key)
-      ? "" : redactCredentials(item),
+    CREDENTIAL_KEY.test(key) ? "" : redactCredentials(item),
   ]));
 }

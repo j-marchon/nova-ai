@@ -761,6 +761,6 @@ const GalleryCard = memo(function GalleryCard({ kind, item, image, name, lastId,
 
 /* Card sizes, smaller first. One setting for every card grid, Chub's too. */
 export const CARD_SIZES = {
-  large: { grid: "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6 gap-3 lg:gap-4", big: true },
-  xl: { grid: "grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4", big: true, wide: true },
+  large: { grid: "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-3 lg:gap-4", big: true },
+  xl: { grid: "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4", big: true, wide: true },
 };

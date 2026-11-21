@@ -11,6 +11,8 @@ import { QuickRepliesStrip, QuickRepliesManager, SendAsModal } from "../componen
 import { RP } from "../components/RP.jsx";
 import { StyleChips } from "../components/StylePicker.jsx";
 import { ChatBackdrop, Texture } from "../components/backdrops.jsx";
+import { CastPlus } from "../components/CastPlus.jsx";
+import { CyclingAvatar } from "../components/CyclingAvatar.jsx";
 import { useLongPress, useMultiTap } from "../components/gestures.js";
 import { ModelPicker, useEndpointLabel } from "../components/models.jsx";
 import { ThemeSection } from "../components/theme.jsx";
@@ -28,7 +30,7 @@ import { translateText } from "../lib/translate.js";
 import { canSpeak, speak, speechOptions, stopSpeech } from "../lib/tts.js";
 import { activePreset, genParams, styleLabel, thinkingOn, withThinking } from "../lib/styles.js";
 import { DEFAULT_LORE_BUDGET, DEFAULT_SCAN_DEPTH, chatBooks, entryLabel, selectLore } from "../lib/lore.js";
-import { castMember, ensembleOf, ensembleTitle, leadNames, linkedCards, scopeCandidates, scopeOf } from "../lib/scope.js";
+import { castMember, ensembleOf, ensembleTitle, leadNames, linkedCards, replySpeakers, scopeCandidates, scopeOf } from "../lib/scope.js";
 import { ScopeSheet, ScopeStrip } from "../components/Scope.jsx";
 import { WorldSheet, timeOf } from "../components/WorldSheet.jsx";
 import { editMessage, showSwipe, swipeIndex, swipeList } from "../lib/swipes.js";
@@ -389,6 +391,9 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit }
     ? universe?.name
     : castPeople.length > 5 ? castNames.join(", ") : ensembleTitle(castPeople) || character?.name;
   const title = (linkedHere.length && chat.title?.trim()) || castTitle;
+  /* the header shows one name, the first one's (or the chat's own name);
+     everyone else is behind the + beside it */
+  const headTitle = (linkedHere.length && chat.title?.trim()) || (castPeople.length > 1 ? castPeople[0]?.name : title);
   const headerAvatar = isUni ? universe?.avatar : character?.avatar;
   /* who the conversation is with, as far as names in notes go */
   const charLabel = castTitle;
@@ -480,7 +485,33 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit }
     }
   };
 
+  const voicesSeen = useRef(new Map());
+  /* the picture for a name said in a reply: one of the cards in this chat,
+     a cast member, or one of the universe's characters */
+  const picOf = (name) => {
+    const n = String(name || "").trim().toLowerCase();
+    const card = [character, ...linkedHere].find((c) => c?.name?.trim().toLowerCase() === n);
+    if (card) return card.avatar || null;
+    if (isUni) return universe?.characters.find((c) => c.name?.trim().toLowerCase() === n)?.avatar || null;
+    const side = sc.cast.find((c) => c.name?.trim().toLowerCase() === n);
+    return (side?.characterId ? data.characters.find((x) => x.id === side.characterId)?.avatar : null) || side?.avatar || null;
+  };
   const avatarFor = (m) => {
+    /* a reply with several voices: only theirs, one picture taking turns */
+    if (m.role === "assistant" && (isUni || linkedHere.length || sc.cast.length)) {
+      const names = replySpeakers(m.content);
+      if (names.length > 1) {
+        /* the same object while the voices and their pictures stay the same,
+           so the memoised row is not drawn again for nothing */
+        const people = names.map((name) => ({ name, src: picOf(name) }));
+        const key = people.map((p) => `${p.name}\u0000${p.src?.length || 0}`).join("\u0001");
+        const hit = voicesSeen.current.get(m.id);
+        if (hit?.key === key) return hit.av;
+        const av = { src: people.find((p) => p.src)?.src || null, name: names[0], people, label: names.join(", ") };
+        voicesSeen.current.set(m.id, { key, av });
+        return av;
+      }
+    }
     if (m.role === "system") return { src: null, name: m.speaker || "Narrator", isSystem: true };
     if (m.role === "user") return { src: null, name: userName };
     /* one of your characters, by id (a reply they led, or from a chat that
@@ -1275,7 +1306,7 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit }
 
       {/* full-screen character backdrop — sits behind header, messages, and composer */}
       <ChatBackdrop list={bgs} seconds={theme.bgSeconds} />
-      {!hasBg && data.appearance?.texture !== false && <div aria-hidden className="absolute inset-0 pointer-events-none"><Texture /></div>}
+      {!hasBg && <div aria-hidden className="absolute inset-0 pointer-events-none"><Texture /></div>}
       {/* header */}
       <div
         className={`nv-chat-header relative flex items-center gap-3 px-3 sm:px-5 z-10 ${hasBg ? "" : "nv-chat-head"}`}
@@ -1290,15 +1321,10 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit }
           <div className="nv-hair w-9 h-9 rounded-full flex items-center justify-center shrink-0">
             <Globe size={15} strokeWidth={1.5} className="text-zinc-500" />
           </div>
-        ) : !isUni && castPeople.length > 5 ? null
-        : castPeople.length > 1 ? (
-          /* several of them: a row of pictures, overlapping, in cast order */
-          <span data-chat-avatar="1" className="shrink-0 flex items-center">
-            {castPeople.map((c, i) => (
-              <span key={c.id} className="rounded-full ring-2 ring-black/40" style={{ marginLeft: i ? -10 : 0, zIndex: castPeople.length - i }}>
-                <Pic src={c.avatar} name={c.name || "?"} size="w-9 h-9" />
-              </span>
-            ))}
+        ) : castPeople.length > 1 ? (
+          /* several of them: one picture, each in turn */
+          <span data-chat-avatar="1" className="shrink-0 rounded-full">
+            <CyclingAvatar people={castPeople.map((c) => ({ name: c.name, src: c.avatar }))} size="w-9 h-9" />
           </span>
         ) : (
           /* the picture a view transition carries in from the card you
@@ -1307,10 +1333,12 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit }
             <Pic src={headerAvatar} name={title || "?"} size="w-9 h-9" />
           </span>
         )}
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 flex items-center gap-1.5">
           <p className="text-[15px] font-semibold tracking-tight text-zinc-100 truncate leading-tight">
-            {title || "Chat"}
+            {headTitle || "Chat"}
           </p>
+          {/* the rest of the cast, behind a + */}
+          {castPeople.length > 1 && <CastPlus people={castPeople.map((c) => ({ name: c.name, src: c.avatar }))} />}
         </div>
         {/* this chat's look and its memory, in one sheet. It breathes in the
             accent while a memory or scene note is being written. */}
@@ -1347,7 +1375,8 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit }
                   look={look}
                   avSrc={av.src}
                   avName={av.name}
-                  label={(m.role === "assistant" || m.role === "system") && m.speaker ? m.speaker : av.name}
+                  avPeople={av.people}
+                  label={av.label || ((m.role === "assistant" || m.role === "system") && m.speaker ? m.speaker : av.name)}
                   editing={inlineEdit?.id === m.id ? inlineEdit : null}
                   anyEditing={!!inlineEdit}
                   isLast={isLast}

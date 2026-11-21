@@ -268,6 +268,75 @@ function tree(root, files, where) {
   return out;
 }
 
+/* Layered scenes (LayeredScene.jsx): pictures with their place, pivot and
+   motion as plain numbers, and a few effects the app draws. */
+const SCENE_FX = new Set(["glints", "sweep", "bubbles", "motes"]);
+const nums = (v, n, min, max, where) => {
+  if (!Array.isArray(v) || v.length !== n) fail(`${where} must be ${n} numbers.`);
+  return v.map((x, i) => num(x, min, max, `${where}[${i}]`));
+};
+function scenes(list, files) {
+  if (!Array.isArray(list) || !list.length || list.length > 8) fail("background.scenes must be a list of up to 8 scenes.");
+  const picture = (ref, where) => {
+    const p = resolve(files, "manifest.json", ref, IMAGES, where);
+    return dataUrl(files.get(p), TYPES[ext(p)]);
+  };
+  const comp = (c, where) => {
+    if (!c || typeof c !== "object") fail(`${where} must describe a scene.`);
+    if (!Array.isArray(c.layers) || !c.layers.length || c.layers.length > 16) fail(`${where}.layers must be a list of up to 16 layers.`);
+    if (c.fx != null && (!Array.isArray(c.fx) || c.fx.length > 8)) fail(`${where}.fx must be a list of up to 8 effects.`);
+    return {
+      width: num(c.width, 1, 8192, `${where}.width`),
+      height: num(c.height, 1, 8192, `${where}.height`),
+      period: num(c.period, 1, 600, `${where}.period`),
+      layers: c.layers.map((l, i) => {
+        const lw = `${where}.layers[${i}]`;
+        if (!l || typeof l !== "object") fail(`${lw} must be a layer.`);
+        if (l.frames != null && (!Array.isArray(l.frames) || l.frames.length > 121)) fail(`${lw}.frames must be a list of up to 121 frames.`);
+        return {
+          src: picture(l.src, `${lw}.src`),
+          rect: nums(l.rect, 4, -1, 2, `${lw}.rect`),
+          ...(l.pivot != null ? { pivot: nums(l.pivot, 2, -1, 2, `${lw}.pivot`) } : {}),
+          ...(l.depth != null ? { depth: num(l.depth, 0, 4, `${lw}.depth`) } : {}),
+          ...(l.frames != null ? {
+            frames: l.frames.map((f, k) => {
+              const fw = `${lw}.frames[${k}]`;
+              const [o, x, y, r, sc, a] = nums(f, 6, -1000, 1000, fw);
+              return [num(o, 0, 1, `${fw}[0]`), x, y, num(r, -360, 360, `${fw}[3]`), num(sc, 0, 10, `${fw}[4]`), num(a, 0, 1, `${fw}[5]`)];
+            }),
+          } : {}),
+        };
+      }),
+      fx: (c.fx || []).map((f, i) => {
+        const fw = `${where}.fx[${i}]`;
+        if (!SCENE_FX.has(f?.kind)) fail(`${fw}.kind is glints, sweep, bubbles or motes.`);
+        const out = { kind: f.kind };
+        for (const [k, [min, max]] of Object.entries({ count: [0, 40], size: [1, 200], period: [1, 600], angle: [-180, 180], strength: [0, 1] })) {
+          if (f[k] != null) out[k] = num(f[k], min, max, `${fw}.${k}`);
+        }
+        if (f.area != null) out.area = nums(f.area, 4, 0, 1, `${fw}.area`);
+        return out;
+      }),
+    };
+  };
+  const ids = new Set();
+  return list.map((s, i) => {
+    const w = `background.scenes[${i}]`;
+    if (!s || typeof s !== "object") fail(`${w} must be a scene.`);
+    if (typeof s.id !== "string" || !SKIN_ID.test(s.id) || ids.has(s.id)) fail(`${w}.id must be a short, unique, lowercase name.`);
+    ids.add(s.id);
+    if (typeof s.name !== "string" || !s.name.trim() || s.name.length > 40) fail(`${w}.name must be up to 40 characters.`);
+    if (s.desktop == null && s.phone == null) fail(`${w} needs a desktop or a phone version.`);
+    return {
+      id: s.id,
+      name: s.name.trim(),
+      ...(s.thumb != null ? { thumb: picture(s.thumb, `${w}.thumb`) } : {}),
+      ...(s.desktop != null ? { desktop: comp(s.desktop, `${w}.desktop`) } : {}),
+      ...(s.phone != null ? { phone: comp(s.phone, `${w}.phone`) } : {}),
+    };
+  });
+}
+
 function effects(e) {
   if (e == null) return {};
   if (typeof e !== "object") fail("effects must be a set of effects.");
@@ -329,7 +398,14 @@ export function readPack(input) {
     const path = resolve(files, "manifest.json", m.css, new Set(["css"]), "css");
     pack.css = packCss(strFromU8(files.get(path)), files, path);
   }
-  if (m.background != null) pack.background = { root: tree(m.background.root, files, "background.root") };
+  if (m.background != null) {
+    const b = m.background;
+    if (b.root == null && b.scenes == null) fail("background needs a root or scenes.");
+    pack.background = {
+      ...(b.root != null ? { root: tree(b.root, files, "background.root") } : {}),
+      ...(b.scenes != null ? { scenes: scenes(b.scenes, files) } : {}),
+    };
+  }
   if (m.splash != null) {
     const s = m.splash;
     pack.splash = {

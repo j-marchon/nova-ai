@@ -52,13 +52,24 @@ export async function chubGet(url, { binary = false } = {}) {
   return binary ? new Uint8Array(await res.arrayBuffer()) : res.json();
 }
 
+/* Chub's pictures: `avatar.webp` is a 200px square crop, too small for a
+   tile; the card picture (chara_card_v2.png) is the whole 2:3 portrait the
+   creator uploaded, the one chub.ai shows. */
+const AVATARS = "https://avatars.charhub.io/avatars";
+export const chubPicture = (h) => h?.image || (h?.fullPath ? `${AVATARS}/${h.fullPath}/chara_card_v2.png` : "");
+
 /* A search result, trimmed to what the browser shows and what a favourite
    needs to keep so the Favorites view works without a request. */
 export const chubHit = (n) => ({
   fullPath: n.fullPath,
   name: n.name || n.fullPath,
+  creator: String(n.fullPath || "").split("/")[0],
   tagline: n.tagline || "",
-  avatar: n.avatar_url || n.max_res_url || `https://avatars.charhub.io/avatars/${n.fullPath}/avatar.webp`,
+  avatar: n.avatar_url || n.max_res_url || `${AVATARS}/${n.fullPath}/avatar.webp`,
+  image: n.max_res_url || `${AVATARS}/${n.fullPath}/chara_card_v2.png`,
+  rating: typeof n.rating === "number" && n.ratingCount ? n.rating : null,
+  ratings: n.ratingCount ?? null,
+  createdAt: n.createdAt || null,
   topics: Array.isArray(n.topics) ? n.topics : [],
   stars: n.starCount ?? null,
   chats: n.nChats ?? null,
@@ -75,9 +86,19 @@ export const isAdultHit = (h) => !!h?.nsfw || (h?.topics || []).some((t) => ADUL
 
 export const CHUB_PAGE = 24;
 
+/* A search box's text into words and tags: "elf #fantasy #slow_burn"
+   searches "elf" among cards tagged Fantasy and Slow Burn (an underscore
+   stands for a space, since tags can have them). */
+export function parseChubQuery(text) {
+  const tags = [];
+  const q = String(text || "").replace(/(^|\s)#([^\s#]+)/g, (_, pre, t) => { tags.push(t.replace(/_/g, " ")); return pre; }).replace(/\s+/g, " ").trim();
+  return { q, tags: [...new Set(tags.map((t) => t.trim()).filter(Boolean))] };
+}
+
 /* `safe` (the default) asks Chub for no NSFW or NSFL cards and drops any
-   that still come back flagged or tagged as adult. */
-export async function chubSearch({ q = "", page = 1, sort = "download_count", safe = true }) {
+   that still come back flagged or tagged as adult. `tags` keeps only cards
+   with every one of them; `creator` only that creator's cards. */
+export async function chubSearch({ q = "", page = 1, sort = "download_count", safe = true, tags = [], creator = "" }) {
   /* "random" is not a Chub sort: it is a random page of the popular list,
      shuffled here, so every visit and every shuffle shows different cards. */
   const random = sort === "random";
@@ -93,6 +114,8 @@ export async function chubSearch({ q = "", page = 1, sort = "download_count", sa
       include_forks: "true",
       venus: "false",
     });
+    if (tags.length) p.set("topics", tags.join(","));
+    if (creator) p.set("username", creator);
     const r = await chubGet(`${CHUB_API}/search?${p}`);
     const nodes = r?.data?.nodes || r?.nodes || [];
     const all = nodes.filter((n) => n?.fullPath).map(chubHit);
@@ -101,13 +124,31 @@ export async function chubSearch({ q = "", page = 1, sort = "download_count", sa
     return { hits: safe ? all.filter((h) => !isAdultHit(h)) : all, raw: all.length, count: r?.data?.count ?? r?.count ?? null };
   };
   if (!random) return run(page);
-  let r = await run(1 + Math.floor(Math.random() * (q ? 5 : 100)));
+  let r = await run(1 + Math.floor(Math.random() * (q || tags.length || creator ? 5 : 100)));
   if (!r.hits.length) r = await run(1);
   for (let i = r.hits.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [r.hits[i], r.hits[j]] = [r.hits[j], r.hits[i]];
   }
   return r;
+}
+
+/* A creator's public profile, as chub.ai shows it above their cards. Cached
+   for the session. */
+const userCache = new Map();
+export async function chubCreator(username) {
+  if (userCache.has(username)) return userCache.get(username);
+  const u = await chubGet(`${CHUB_API}/api/users/${encodeURIComponent(username)}`);
+  const out = {
+    username: u?.username || username,
+    name: u?.name || u?.username || username,
+    avatar: /^https:\/\//.test(u?.avatar_url || "") ? u.avatar_url : "",
+    bio: plainNotes(u?.bio || ""),
+    followers: u?.n_followers ?? null,
+    cards: u?.projects?.count ?? null,
+  };
+  userCache.set(username, out);
+  return out;
 }
 
 /* chub.ai/characters/author/slug, characterhub.org/characters/author/slug,
@@ -133,6 +174,7 @@ export function plainNotes(text) {
     .replace(/<\/(p|div|h\d|li)>/gi, "\n")
     .replace(/<[^>]+>/g, "")
     .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
     .replace(/[*_]{2,}/g, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();

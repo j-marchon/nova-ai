@@ -1,3 +1,4 @@
+import { CyclingAvatar } from "../../components/CyclingAvatar.jsx";
 import { enter, respond } from "../../components/motion/runtime.js";
 import { memo, useMemo, useRef, useLayoutEffect } from "react";
 import { ChevronLeft, ChevronRight, FastForward, Languages, MoreHorizontal, Pencil, Play, RefreshCw, Trash2, Wand2, X } from "lucide-react";
@@ -36,7 +37,7 @@ export const MessageRow = memo(function MessageRow(props) {
 });
 
 function RowBody({
-  m, depth, look, avSrc, avName, label, editing, anyEditing, isLast, busy,
+  m, depth, look, avSrc, avName, avPeople, label, editing, anyEditing, isLast, busy,
   swipeable, highlight, translation, speaking, greetIdx, greetCount, greetLabel, actions, when,
 }) {
   const rowRef = useRef(null);
@@ -116,7 +117,7 @@ function RowBody({
     >
       {/* name row above the bubble, so the text gets the full width */}
       <div className={`nv-msg-head flex items-center gap-2 mb-1.5 px-0.5 w-full ${m.role === "user" ? "flex-row-reverse" : ""}`}>
-        <Pic src={avSrc} name={avName} size="w-6 h-6" />
+        {avPeople?.length > 1 ? <CyclingAvatar people={avPeople} size="w-6 h-6" /> : <Pic src={avSrc} name={avName} size="w-6 h-6" />}
         <SpeakerName bare={m.role === "assistant" && !avSrc} style={nameStyle}>
           {label}
         </SpeakerName>

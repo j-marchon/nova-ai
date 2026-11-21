@@ -1,3 +1,4 @@
+import { officialSkinOf } from "./official.js";
 import { SkinError, compareVersions, isPackId, packMeta, readPack } from "./pack.js";
 
 /* ---------- the skins on this device ----------
@@ -93,8 +94,14 @@ export async function packBytes(id) {
    `onlyNewer` (backups, sync) leaves a skin alone unless this copy is a
    newer version; adding a file by hand always replaces it.
    Returns { meta, status: "added" | "updated" | "same" | "older" }. */
-export async function installPack(input, { onlyNewer = false } = {}) {
+export async function installPack(input, { onlyNewer = false, expect = null } = {}) {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+  /* only the published files (official.js); `expect` names the skin the
+     person asked to unlock */
+  const official = await officialSkinOf(bytes);
+  if (!official || (expect && official !== "*" && official !== expect)) {
+    throw new SkinError(expect ? "That file is not this skin. Pick the .zip you got as a supporter, as it is, without unzipping it." : "That is not a published Nova skin.");
+  }
   const pack = readPack(bytes);
   const meta = packMeta(pack);
   const had = installedSkins().find((m) => m.id === meta.id);

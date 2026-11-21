@@ -38,6 +38,17 @@
    Off is the fallback for everything: a chat with no `scope` field behaves
    as the plain chat it always was. */
 
+/* Who speaks in a reply: the **Name:** labels that open each part, in the
+   order they first speak, each once. */
+export function replySpeakers(text) {
+  const out = [];
+  for (const m of String(text || "").matchAll(/^[ \t]*\*\*([^*\n:]{1,40}):\*\*/gm)) {
+    const name = m[1].trim();
+    if (name && !out.some((n) => n.toLowerCase() === name.toLowerCase())) out.push(name);
+  }
+  return out;
+}
+
 /* The leads, as names: a card, a list of cards, or a list of names. */
 export const leadNames = (leads) =>
   (Array.isArray(leads) ? leads : [leads]).map((l) => (typeof l === "string" ? l : l?.name)).filter(Boolean);

@@ -103,6 +103,23 @@ await writeFile(path.join(STAGE, "package.json"), JSON.stringify({
   private: true,
 }, null, 2));
 
+/* Nova Bridge's own menu entry, beside Nova's: the same program, started
+   with --nova-bridge. The .deb installs it with the package; on Windows Nova
+   adds a Start-menu shortcut itself (desktop/main.cjs), and the installer's
+   uninstaller removes it (desktop/installer.nsh). */
+const bridgeEntry = path.join(ROOT, "build", "nova-bridge.desktop");
+await writeFile(bridgeEntry, [
+  "[Desktop Entry]",
+  "Name=Nova Bridge",
+  "Comment=Use your subscriptions in Nova, on this computer and your phone",
+  "Exec=/opt/Nova/nova --nova-bridge %U",
+  "Terminal=false",
+  "Type=Application",
+  "Icon=nova",
+  "Categories=Utility;",
+  "",
+].join("\n"));
+
 /* The Windows installer's uninstaller is made by running Windows code, so
    off Windows it needs Wine; without it only the portable .exe is built. */
 const canBuildInstaller = process.platform === "win32" || spawnSync("wine", ["--version"], { stdio: "ignore" }).status === 0;
@@ -123,7 +140,7 @@ const config = {
     executableName: "nova",
     synopsis: "AI chat and roleplay with your own providers",
   },
-  deb: { artifactName: "Nova-${version}-amd64.deb" },
+  deb: { artifactName: "Nova-${version}-amd64.deb", fpm: [`${bridgeEntry}=/usr/share/applications/nova-bridge.desktop`] },
   win: {
     target: [...(canBuildInstaller ? [{ target: "nsis", arch: ["x64"] }] : []), { target: "portable", arch: ["x64"] }],
     icon: path.join(ROOT, "public", "icon-512.png"),
@@ -132,7 +149,7 @@ const config = {
   portable: { artifactName: "Nova-${version}-portable.exe" },
   /* a Start-menu entry and an uninstaller, for this user only (no admin);
      uninstalling keeps the library in %APPDATA%\Nova */
-  nsis: { artifactName: "Nova-${version}-setup.exe", oneClick: false, perMachine: false, allowToChangeInstallationDirectory: true, deleteAppDataOnUninstall: false },
+  nsis: { artifactName: "Nova-${version}-setup.exe", oneClick: false, perMachine: false, allowToChangeInstallationDirectory: true, deleteAppDataOnUninstall: false, include: path.join(ROOT, "desktop", "installer.nsh") },
   publish: null,
 };
 const configFile = path.join(ROOT, "build", "desktop-builder.json");

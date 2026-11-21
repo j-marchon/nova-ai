@@ -191,7 +191,7 @@ video[aria-hidden] { pointer-events: none; }
 .nv-root .nv-composer:focus-within { outline: none; }
 
 /* Faint hairlines separate controls without lifting the AMOLED background. */
-.nv-root :where(.nv-btn--secondary:not([data-inverted="1"]),.nv-btn--danger,button[class*="border"]:not([data-on="1"]):not([aria-pressed="true"]):not([aria-checked="true"]):not([data-highlight="1"]),input:not([type="range"]):not([type="file"]),textarea,select,[role="radiogroup"],.nv-nav-dock,.nv-composer) {
+.nv-root :where(.nv-btn--secondary:not([data-inverted="1"]),.nv-btn--danger,button[class*="border"]:not([data-on="1"]):not([aria-pressed="true"]):not([aria-checked="true"]):not([data-highlight="1"]),input:not([type="range"]):not([type="file"]),textarea,select,.nv-group[role="radiogroup"],.nv-nav-dock,.nv-composer) {
   border: 1px solid var(--nv-control-edge);
   border-color: var(--nv-control-edge) !important;
 }
@@ -262,6 +262,8 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   --nv-btn-icon: 16px; --nv-btn-weight: 500;
 }
 .nv-phone, [data-testid="phone"] { --nv-btn-r: 9999px; }
+/* behind the phone: the chat, dimmed a little and blurred, not blacked out */
+.nv-phone-scrim { background: color-mix(in oklch, var(--nv-bg) 45%, transparent); backdrop-filter: blur(10px) saturate(1.1); -webkit-backdrop-filter: blur(10px) saturate(1.1); }
 @layer components {
   .nv-btn {
     --nv-btn-h: var(--nv-btn-h-md); --nv-btn-pad: var(--nv-btn-px);
@@ -510,6 +512,76 @@ html[data-skin="minimal"] .nv-root { --nv-shadow: none; --nv-lamp-line: transpar
   .nv-nav-marker::after { left: -11px; top: 50%; width: 1.5px; height: 22px; margin: -11px 0 0; }
   .nv-page-host { padding-left: calc(var(--nv-rail) + var(--sa-l)); }
   .nv-top { --nv-rail-offset: var(--nv-rail); }
+}
+
+/* ---------- layered scenes (skins/LayeredScene.jsx) ----------
+   The skin's background: a scene of layers covering the window, centred
+   like a wallpaper, behind every screen. Fades in once its plate is
+   decoded; sits back while a chat is open. In light mode Nova's night
+   scenes are shown as their negative, so they stay a monochrome print. */
+.nv-scene { position: fixed; inset: 0; z-index: -10; overflow: hidden; pointer-events: none; opacity: 0; transition: opacity .8s ease; background: var(--nv-bg); contain: strict; }
+.nv-scene[data-ready="1"] { opacity: 1; }
+.nv-scene-stage { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+.nv-scene-layer {
+  position: absolute; display: block; max-width: none; user-select: none;
+  /* depth: a desktop pointer shifts each layer a little (--px, --py set by the scene) */
+  translate: calc(var(--px, 0) * var(--d, 0) * -22px) calc(var(--py, 0) * var(--d, 0) * -14px);
+  transition: translate 1.2s cubic-bezier(.16, 1, .3, 1);
+}
+.nv-scene--invert { filter: invert(1); }
+.nv-scene::after { content: ""; position: absolute; inset: 0; background: var(--nv-bg); opacity: 0; transition: opacity .6s ease; }
+.nv-scene[data-reading]::after { opacity: .42; }
+/* in light mode, a haze of daylight behind the title and tabs, so dark text
+   reads on a deep sky (Lake Meridian) as on a pale wall */
+.nv-root[data-theme="light"] .nv-scene::before {
+  content: ""; position: absolute; inset: 0 0 auto; height: 26%; z-index: 1; pointer-events: none;
+  background: linear-gradient(to bottom, oklch(1 0 0 / .62), oklch(1 0 0 / .32) 55%, oklch(1 0 0 / 0));
+}
+@media (prefers-reduced-motion: reduce) { .nv-scene, .nv-scene-layer, .nv-scene::after { transition: none; } }
+/* a chat over the scene: see-through, without its own grid and grain */
+.nv-root[data-scene="1"] .nv-chat-root { background: transparent !important; }
+.nv-root[data-scene="1"] .nv-chat-root > .absolute > .nv-texture { display: none; }
+/* the effects over the layers */
+.nv-scene-glint {
+  position: absolute; opacity: 0; will-change: transform, opacity;
+  background:
+    linear-gradient(90deg, transparent 45%, oklch(1 0 0 / .95) 50%, transparent 55%),
+    linear-gradient(0deg, transparent 45%, oklch(1 0 0 / .95) 50%, transparent 55%),
+    radial-gradient(closest-side, oklch(1 0 0 / .9), oklch(1 0 0 / 0) 70%);
+  mix-blend-mode: screen;
+}
+.nv-scene-sweep {
+  position: absolute; inset: -40% -10%; opacity: 0; rotate: var(--nv-sweep-angle, 20deg); will-change: transform, opacity;
+  background: linear-gradient(90deg, transparent 38%, oklch(1 0 0 / calc(var(--nv-sweep, .1) * .6)) 46%, oklch(1 0 0 / var(--nv-sweep, .1)) 50%, oklch(1 0 0 / calc(var(--nv-sweep, .1) * .6)) 54%, transparent 62%);
+  mix-blend-mode: screen;
+}
+.nv-scene-bubble {
+  position: absolute; bottom: -48px; border-radius: 50%; opacity: 0; will-change: transform, opacity;
+  background: radial-gradient(circle at 32% 28%, oklch(1 0 0 / .95), oklch(1 0 0 / 0) 26%), radial-gradient(circle at 50% 50%, oklch(1 0 0 / 0) 58%, oklch(0.95 0.05 210 / .55) 72%, oklch(1 0 0 / .85) 100%);
+  box-shadow: inset 0 0 0 1px oklch(1 0 0 / .45);
+}
+.nv-scene-mote { position: absolute; border-radius: 50%; opacity: 0; background: radial-gradient(closest-side, oklch(1 0 0), oklch(1 0 0 / .5) 45%, oklch(1 0 0 / 0)); will-change: transform, opacity; }
+
+/* ---------- the wide window: Chats beside the open chat ----------
+   App sets data-split while Chats or a chat is showing on a wide window:
+   the list is a fixed pane beside the rail, scrolling on its own, and the
+   chat (or, before one is picked, a quiet mark) fills the rest. */
+.nv-split-empty { display: none; }
+@media (min-width: 1024px) {
+  .nv-root[data-split="1"] { --nv-split: clamp(320px, 26vw, 400px); }
+  .nv-root[data-split="1"] .nv-tab-history {
+    position: fixed; top: 0; bottom: 0; left: calc(var(--nv-rail) + var(--sa-l)); width: var(--nv-split);
+    overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+    /* the hairline between list and chat (borders are cleared app-wide) */
+    background: linear-gradient(var(--nv-line), var(--nv-line)) right top / 1px 100% no-repeat; z-index: 20;
+  }
+  .nv-root[data-split="1"] .nv-tab-history .nv-page-wrap { padding: 0 18px 2rem; max-width: none; }
+  .nv-root[data-split="1"] .nv-tab-history .nv-row[data-on="1"] { background: var(--nv-control); }
+  .nv-root[data-split="1"] .nv-chat-root { left: calc(var(--nv-rail) + var(--nv-split) + var(--sa-l)); }
+  .nv-root[data-split="1"] .nv-split-empty {
+    position: fixed; inset: 0 0 0 calc(var(--nv-rail) + var(--nv-split) + var(--sa-l));
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; opacity: .55; pointer-events: none;
+  }
 }
 
 /* ---------- pages ---------- */

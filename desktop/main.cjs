@@ -99,9 +99,60 @@ function startBridge() {
   child.unref();
 }
 
-/* the skin Nova wears, for the Bridge window to match */
-function shareSkin(id) {
+/* ---------- the icon follows the skin (src/skins/icons.js) ----------
+   The window's icon, and on Linux the menu entries' too: the package's
+   entries (/usr/share/applications) are copied to the user's own entries
+   folder with the skin's icon, which take their place; Nova's own icon
+   removes the copies. Icons live inside the app's archive, so the one in
+   use is copied out where the desktop can read it. */
+const SKIN_ICONS = ["nova", "minimal", "aero"];
+const ENTRIES = ["nova.desktop", "nova-bridge.desktop"];
+function skinIcon(skin, window) {
+  const id = SKIN_ICONS.includes(skin) ? skin : "nova";
+  const file = path.join(NOVA_DIR, "icons", `${id}.png`);
+  if (fs.existsSync(file)) window?.setIcon?.(file);
+  if (process.platform !== "linux" || !app.isPackaged) return;
+  const userEntries = path.join(process.env.XDG_DATA_HOME || path.join(app.getPath("home"), ".local", "share"), "applications");
+  try {
+    if (id === "nova") {
+      for (const name of ENTRIES) {
+        const mine = path.join(userEntries, name);
+        if (fs.existsSync(mine) && fs.readFileSync(mine, "utf8").includes("X-Nova-Skin-Icon=")) fs.rmSync(mine);
+      }
+      return;
+    }
+    const iconOut = path.join(app.getPath("userData"), "icons", `${id}.png`);
+    fs.mkdirSync(path.dirname(iconOut), { recursive: true });
+    fs.writeFileSync(iconOut, fs.readFileSync(file));
+    fs.mkdirSync(userEntries, { recursive: true });
+    for (const name of ENTRIES) {
+      const system = path.join("/usr/share/applications", name);
+      if (!fs.existsSync(system)) continue;
+      const text = fs.readFileSync(system, "utf8").replace(/^Icon=.*$/m, `Icon=${iconOut}`).trimEnd();
+      fs.writeFileSync(path.join(userEntries, name), `${text}\nX-Nova-Skin-Icon=${id}\n`);
+    }
+  } catch (e) { console.warn("Nova: could not change the menu icon:", e.message); }
+}
+
+/* ---------- Nova Bridge in the Windows Start menu ----------
+   The installer adds it (desktop/installer.nsh); the portable .exe has no
+   installer, so Nova adds it the first time it runs, pointing at the file
+   the user has, and keeps it pointing there if the file moves. */
+function bridgeShortcut() {
+  if (process.platform !== "win32" || !app.isPackaged) return;
+  const target = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
+  const link = path.join(app.getPath("appData"), "Microsoft", "Windows", "Start Menu", "Programs", "Nova Bridge.lnk");
+  try {
+    const now = fs.existsSync(link) ? shell.readShortcutLink(link) : null;
+    if (now?.target === target && now?.args === BRIDGE_FLAG) return;
+    shell.writeShortcutLink(link, now ? "replace" : "create", { target, args: BRIDGE_FLAG, icon: target, iconIndex: 0, description: "Nova Bridge" });
+  } catch (e) { console.warn("Nova: could not add Nova Bridge to the Start menu:", e.message); }
+}
+
+/* the skin Nova wears, for the Bridge window to match, and the icons */
+function shareSkin(id, window) {
   const skin = typeof id === "string" && /^[a-z0-9-]{1,40}$/.test(id) ? id : "nova";
+  skinIcon(skin, window);
   const dir = BRIDGE_HOME();
   try {
     fs.mkdirSync(dir, { recursive: true });
@@ -120,7 +171,7 @@ else {
   /* Nova's page may ask for only these two things, and only Nova's own page */
   const fromNova = (e) => !!win && e.sender === win.webContents && e.senderFrame === win.webContents.mainFrame && String(e.senderFrame.url).startsWith(ORIGIN + "/");
   ipcMain.handle("nova:start-bridge", (e) => { if (fromNova(e)) startBridge(); });
-  ipcMain.handle("nova:skin", (e, id) => { if (fromNova(e)) shareSkin(id); });
+  ipcMain.handle("nova:skin", (e, id) => { if (fromNova(e)) shareSkin(id, win); });
 
   let win = null;
   let quitting = false;
@@ -209,6 +260,7 @@ else {
     }
     menu();
     createWindow();
+    bridgeShortcut();
   });
 
   app.on("window-all-closed", () => app.quit());

@@ -72,6 +72,10 @@ export function installActionFeedback(root, own) {
     if (el.closest('.nv-msg-edit,[contenteditable="true"]') && !el.matches('button,a[href]')) return null;
     return el;
   };
+  /* A card's picture, when the pointer is over the card itself: the picture
+     zooms inside its own frame and the card, its name and its border stay
+     still (scaling the whole card pushed its text past the clipped edge). */
+  const cardPicture = el => (el.closest(".nv-card") && !el.matches(".nv-card-corner,.nv-btn--sm") ? el.querySelector("img,video") : null);
   const release = el => {
     if (!el?.isConnected) return;
     if (el.matches('input[type="range"]')) { tween(el, { "--nv-thumb-scale": 1, duration: .5, ease: MOTION.bounce }); return; }
@@ -132,12 +136,18 @@ export function installActionFeedback(root, own) {
   const over = event => {
     const el = targetOf(event);
     if (!el || el.matches('.nv-msg,input[type="range"]') || event.pointerType !== "mouse" || !window.matchMedia("(hover: hover) and (pointer: fine)").matches || el.contains(event.relatedTarget) || el === pressed || motionMode() !== "full") return;
+    const pic = cardPicture(el);
+    if (pic) { remember(pic); tween(pic, { scale: 1.04, duration: .45, ease: MOTION.spring }); return; }
     remember(el);
     tween(el, { scale: el.matches(big) ? 1.012 : 1.04, duration: .3, ease: MOTION.spring });
   };
   const out = event => {
     const el = targetOf(event);
-    if (el && !el.contains(event.relatedTarget)) { if (el === pressed) cancel(); else if (event.pointerType === "mouse") release(el); }
+    if (el && !el.contains(event.relatedTarget)) {
+      const pic = cardPicture(el);
+      if (pic && motionMode() !== "off") tween(pic, { scale: 1, duration: .55, ease: MOTION.spring, clearProps: "transform" });
+      if (el === pressed) cancel(); else if (event.pointerType === "mouse") release(el);
+    }
   };
   const unsubscribe = onMotionChange(() => {
     for (const el of touched) { stop(el); set(el, { clearProps: "transform,opacity,--nv-thumb-scale" }); }

@@ -15,21 +15,62 @@
         android:enableOnBackInvokedCallback="true"
         android:theme="@style/AppTheme">
 
+        <!-- The app itself. It is opened through one of the launcher entries
+             below: each is the same app with its own icon, and NovaIconPlugin
+             leaves on only the one for the skin worn (skins/icons.js). The
+             default keeps the name .MainActivity, so shortcuts made before
+             there were icons per skin still work. -->
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density|fontScale"
-            android:name=".MainActivity"
+            android:name=".NovaActivity"
             android:label="@string/title_activity_main"
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
             android:windowSoftInputMode="adjustNothing"
             android:exported="true">
+        </activity>
 
+        <activity-alias
+            android:name=".MainActivity"
+            android:targetActivity=".NovaActivity"
+            android:label="@string/title_activity_main"
+            android:icon="@mipmap/ic_launcher"
+            android:roundIcon="@mipmap/ic_launcher_round"
+            android:enabled="true"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+        </activity-alias>
 
-        </activity>
+        <activity-alias
+            android:name=".IconMinimal"
+            android:targetActivity=".NovaActivity"
+            android:label="@string/title_activity_main"
+            android:icon="@mipmap/ic_launcher_minimal"
+            android:roundIcon="@mipmap/ic_launcher_minimal_round"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".IconAero"
+            android:targetActivity=".NovaActivity"
+            android:label="@string/title_activity_main"
+            android:icon="@mipmap/ic_launcher_aero"
+            android:roundIcon="@mipmap/ic_launcher_aero_round"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <provider
             android:name="androidx.core.content.FileProvider"

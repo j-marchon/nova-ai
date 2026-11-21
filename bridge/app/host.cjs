@@ -8,7 +8,11 @@
    The window: a status light, the counts, the subscriptions, the devices
    allowed in (with a code to approve a new one, and a way to block one),
    worn in the same skin as the Nova app on this computer. Opening it starts
-   hosting; closing it while hosting asks first. */
+   hosting; closing it while hosting asks first.
+
+   Start with this computer (off unless turned on in the window): the Bridge
+   starts at login with --hidden, hosting with no window; opening Nova
+   Bridge from the menu then shows the window of the one already running. */
 
 const { app, BrowserWindow, Menu, ipcMain, shell, nativeTheme } = require("electron");
 const path = require("node:path");
@@ -73,6 +77,35 @@ function createBridgeHost({
     return key;
   }
 
+  /* ---------- start with this computer ----------
+     The command that started this Bridge, run again at login with --hidden:
+     the file the user has for single-file builds (AppImage, portable .exe),
+     this program otherwise. Linux: a desktop entry in ~/.config/autostart;
+     Windows and macOS: the system's login items. */
+  const HIDDEN = "--hidden";
+  const loginCommand = () => {
+    const exe = process.env.APPIMAGE || process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
+    const args = process.argv.slice(1).filter((a) => a !== HIDDEN).map((a) => (a.startsWith("-") ? a : path.resolve(a)));
+    return { exe, args: [...args, HIDDEN] };
+  };
+  const autostartFile = () => path.join(process.env.XDG_CONFIG_HOME || path.join(app.getPath("home"), ".config"), "autostart", "nova-bridge.desktop");
+  const quote = (a) => (/^[\w@%+=:,./-]+$/.test(a) ? a : `"${a.replace(/(["\\$`])/g, "\\$1")}"`);
+  function startsAtLogin() {
+    if (process.platform === "linux") return fs.existsSync(autostartFile());
+    try { return !!app.getLoginItemSettings({ path: loginCommand().exe, args: loginCommand().args }).openAtLogin; } catch { return false; }
+  }
+  function setStartsAtLogin(on) {
+    const { exe, args } = loginCommand();
+    if (process.platform === "linux") {
+      const file = autostartFile();
+      if (on) {
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, ["[Desktop Entry]", "Type=Application", "Name=Nova Bridge", "Comment=Starts Nova Bridge, without its window, when you log in", `Exec=${[exe, ...args].map(quote).join(" ")}`, "Terminal=false", "X-GNOME-Autostart-enabled=true", ""].join("\n"));
+      } else fs.rmSync(file, { force: true });
+    } else app.setLoginItemSettings({ openAtLogin: !!on, path: exe, args });
+    return startsAtLogin();
+  }
+
   let bridge = null;
   let win = null;
   let wanted = false;      /* the user wants it running: the watchdog restarts it if it drops */
@@ -87,6 +120,8 @@ function createBridgeHost({
     if (!bridge) {
       connectionKey();
       bridge = await import(pathToFileURL(bridgeFile).href);
+      /* sign-in pages open the way the desktop opens links */
+      bridge.bridgeSetOpener?.((url) => shell.openExternal(url));
     }
     return bridge;
   }
@@ -125,6 +160,7 @@ function createBridgeHost({
   });
 
   handle("info", () => snapshot());
+  handle("autostart", (on) => (typeof on === "boolean" ? setStartsAtLogin(on) : startsAtLogin()));
   handle("start", async () => { await start(); return snapshot(); });
   handle("stop", async () => { await stop(); return snapshot(); });
   handle("signin", async (id) => {
@@ -216,9 +252,10 @@ function createBridgeHost({
   }, 1500).unref();
 
   return {
-    /* open the window and start hosting */
-    async ready() {
-      createWindow();
+    /* open the window and start hosting; at login (--hidden), host
+       without showing the window until it is asked for */
+    async ready({ hidden = false } = {}) {
+      createWindow({ show: !hidden });
       await start();
     },
     show,
@@ -235,7 +272,7 @@ function runBridgeApp({ bridgeFile, icon }) {
   if (!app.requestSingleInstanceLock()) { app.quit(); return; }
   const host = createBridgeHost({ bridgeFile, icon });
   app.on("second-instance", () => host.show());
-  app.whenReady().then(() => host.ready());
+  app.whenReady().then(() => host.ready({ hidden: process.argv.includes("--hidden") }));
   app.on("window-all-closed", () => app.quit());
 }
 

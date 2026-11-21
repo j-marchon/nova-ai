@@ -164,7 +164,11 @@
     },
     close(dialog) {
       const a = dialog.animate([{ opacity: 1 }, { opacity: 0, transform: full() ? "scale(.97)" : "none" }], { duration: 160, easing: "ease-in", fill: "forwards" });
-      a.finished.then(() => { dialog.close(); a.cancel(); });
+      /* closed when the fade ends, or shortly after in any case: a hidden or
+         busy window can hold an animation back, and the dialog must still go */
+      const done = () => { clearTimeout(late); if (dialog.open) dialog.close(); a.cancel(); };
+      const late = setTimeout(done, 400);
+      a.finished.then(done, done);
     },
   };
 

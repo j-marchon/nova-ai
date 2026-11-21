@@ -26,13 +26,14 @@ export function BackupPanel({ data, update }) {
   const desktop = !native && !!window.novaDesktop;
   const fileRef = useRef(null);
   const [busy, setBusy] = useState(null);
-  const [includeCredentials, setIncludeCredentials] = useState(false);
   const [persistence, setPersistence] = useState("checking");
   const [note, setNote] = useState(null); // { ok, text }
   const [pending, setPending] = useState(null); // { state, createdAt }
   const [progress, setProgress] = useState(null); // whole percent while saving
   /* skins added in Look go in the file too; kept, so the daily backup follows */
   const includeSkins = !!data.settings.backupSkins;
+  /* kept too, so Sync's Send follows it; the daily backup never carries keys */
+  const includeCredentials = !!data.settings.backupCredentials;
   const skinCount = useInstalledSkins().length;
 
   useEffect(() => {
@@ -175,9 +176,9 @@ export function BackupPanel({ data, update }) {
       />
       <ToggleRow
         on={includeCredentials}
-        onClick={() => { if (!busy) setIncludeCredentials(!includeCredentials); }}
+        onClick={() => { if (!busy) update({ settings: { ...data.settings, backupCredentials: !includeCredentials } }); }}
         title="Include API keys and credentials"
-        sub="Off by default. When enabled, anyone with the unencrypted backup can use these credentials. Keep it private."
+        sub="Off by default. Sync's Send follows this too. When on, anyone with the unencrypted file can use these credentials. Keep it private."
       />
       <ToggleRow
         on={includeSkins}

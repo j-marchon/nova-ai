@@ -37,3 +37,6 @@ sillytavern/
 
 # design-tool scratch (Impeccable)
 .impeccable/
+
+# Python caches
+__pycache__/

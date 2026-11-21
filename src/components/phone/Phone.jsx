@@ -10,6 +10,21 @@ import { REFRESH_STEPS, clockOf, timeLabel } from "../../lib/phoneClock.js";
 import { toLayout } from "../../lib/uiScale.js";
 import { scopeOf } from "../../lib/scope.js";
 import { PhoneHome } from "./PhoneHome.jsx";
+
+/* On a wide window the phone is drawn larger, as a bigger phone rather than a
+   longer page: scaled up to fill about 92% of the window's height (the
+   device is designed at 390×800). On a phone it is the whole screen. */
+const DEVICE_H = 800;
+function useDeviceZoom() {
+  const read = () => (typeof window === "undefined" || window.innerWidth < 1024 ? 1 : Math.max(1, Math.min(1.4, (window.innerHeight * 0.92) / DEVICE_H)));
+  const [zoom, setZoom] = useState(read);
+  useEffect(() => {
+    const on = () => setZoom(read());
+    window.addEventListener("resize", on);
+    return () => window.removeEventListener("resize", on);
+  }, []);
+  return zoom;
+}
 import { ProfilePage } from "./AccountSheet.jsx";
 import { PhoneAvatar, StepMenu } from "./parts.jsx";
 import { usePhoneBusy } from "./usePhoneTick.js";
@@ -80,6 +95,7 @@ export function Phone({ chat, data, persona, userName, character, ensemble, univ
   const dir = useRef(1);
   const root = useRef(null);
   const device = useRef(null);
+  const zoom = useDeviceZoom();
   const scrim = useRef(null);
   const page = useRef(null);
   const closing = useRef(false);
@@ -261,11 +277,12 @@ export function Phone({ chat, data, persona, userName, character, ensemble, univ
       className="nv-screen nv-kb nv-safe-x fixed inset-0 z-50 flex items-center justify-center outline-none"
       style={{ background: "transparent" }}
     >
-      <div ref={scrim} aria-hidden className="absolute inset-0 hidden min-[480px]:block" style={{ background: "var(--nv-scrim)" }} onClick={() => leave(false)} />
+      {/* the chat stays in view behind it, softened */}
+      <div ref={scrim} aria-hidden className="nv-phone-scrim absolute inset-0 hidden min-[480px]:block" onClick={() => leave(false)} />
       <div
         ref={device}
         className="nv-ios-device relative flex flex-col w-full h-full overflow-hidden min-[480px]:w-[390px] min-[480px]:h-[800px] min-[480px]:max-h-[calc(100%-2rem)]"
-        style={{ background: "var(--nv-bg)", color: "var(--nv-ink)" }}
+        style={{ background: "var(--nv-bg)", color: "var(--nv-ink)", ...(zoom > 1 ? { zoom, maxHeight: `calc((100% - 2rem) / ${zoom})` } : null) }}
       >
         <span aria-hidden className="nv-ios-island hidden min-[480px]:block" />
         {/* the one top row: back (every page but home), whose phone (a

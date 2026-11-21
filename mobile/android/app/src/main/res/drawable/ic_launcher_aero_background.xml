@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- the Aero skin's launcher icon: the sky behind the glass orb -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient android:angle="270" android:startColor="#9FDCF4" android:endColor="#00B5C5"/>
+</shape>

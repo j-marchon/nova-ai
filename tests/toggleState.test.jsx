@@ -98,12 +98,12 @@ describe("selected state is exposed and styled", () => {
     expect(sw("Match case").hasAttribute("data-on")).toBe(false);
   });
 
-  it("Background tiles: the chosen preset is pressed and marked", async () => {
-    await mount(<AppearancePanel ap={{ bgPreset: "none" }} onChange={() => {}} />);
-    const tile = [...document.body.querySelectorAll("button[aria-pressed]")].find((b) => b.textContent.includes("None"));
-    expect(tile.getAttribute("aria-pressed")).toBe("true");
-    expect(tile.getAttribute("data-on")).toBe("1");
-    expect(tile.querySelector("svg")).not.toBeNull();
+  it("Skin tiles: the worn skin is checked; Look has no background, surface or preset options", async () => {
+    await mount(<AppearancePanel ap={{ skin: "minimal" }} onChange={() => {}} />);
+    const tiles = [...document.body.querySelectorAll('[role="radiogroup"][aria-label="Skin"] [role="radio"]')];
+    expect(tiles.map((t) => t.textContent.match(/^(Nova|Minimal|Aero)/)?.[1])).toEqual(["Nova", "Minimal", "Aero"]);
+    expect(tiles.find((t) => t.textContent.startsWith("Minimal")).getAttribute("aria-checked")).toBe("true");
+    expect(document.body.textContent).not.toMatch(/Background opacity|Grid and grain|Appearance preset|Add skin from file/);
   });
 
   it("Providers: rows only open their editor; the provider is picked in the Model tab", async () => {

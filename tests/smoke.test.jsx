@@ -357,10 +357,14 @@ describe("several of your characters in one chat", () => {
     expect(Harness.data.chats[0].scope.cast.at(-1)).toMatchObject({ name: "Tom", characterId: "c2", description: "" });
   });
 
-  it("lists the chat under its title, or its people's names", async () => {
+  it("lists the chat under its title, or its first person's name with the rest behind a +", async () => {
     await mount(<Harness initial={seed([ensemble({ title: "The Crew" }), ensemble({ id: "g2" })])} render={(data, update) => <HistoryPage data={data} update={update} openChat={() => {}} />} />);
     expect(textOf()).toContain("The Crew");
-    expect(textOf()).toContain("Mira, Tom");
+    expect(textOf()).not.toContain("Mira, Tom");
+    const plus = host.querySelectorAll('button[aria-label="1 more: Mira, Tom"]');
+    expect(plus).toHaveLength(2);
+    await click(plus[1]);
+    expect([...document.body.querySelectorAll("li")].map((li) => li.textContent)).toEqual(expect.arrayContaining(["Mira", "Tom"]));
   });
 
   it("lets a universe's characters or its narration lead, with Scope off", async () => {
@@ -543,10 +547,15 @@ describe("video pictures", () => {
   });
 
   it("stretches a cut video background like a still, and loops a kept original over its cut", async () => {
-    await mount(<ChatBackdrop list={[{ image: vid, video: true, opacity: 0.4 }]} seconds={20} />);
+    /* cut for a screen this shape: covers it */
+    const here = innerWidth / innerHeight;
+    await mount(<ChatBackdrop list={[{ image: vid, video: true, opacity: 0.4, aspect: here }]} seconds={20} />);
     let v = host.querySelector("video");
     expect(v.className).toContain("object-cover");
     expect(v.closest("[data-backdrop-layer]").style.opacity).toBe("0.4");
+    /* cut for a screen of another shape (a phone's crop on a wide window): fitted in whole */
+    await mount(<ChatBackdrop list={[{ image: vid, video: true, opacity: 0.4, aspect: here / 3 }]} seconds={20} />);
+    expect(host.querySelector("video").className).toContain("object-contain");
 
     await mount(<ChatBackdrop list={[{ image: vid, animated: true, t0: 1, t1: 3, opacity: 0.6, scale: 1, nx: 0, ny: 0 }]} seconds={20} />);
     v = host.querySelector("video");

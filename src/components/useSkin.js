@@ -1,10 +1,14 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { installedSkins, onSkinsChange } from "../skins/store.js";
-import { isBuiltInSkin, loadSkin, loadedSkin, skinRevision, wearSkin } from "../skins/skins.js";
+import { isBuiltInSkin, loadSkin, loadedRevision, loadedSkin, onSkinsLoaded, skinRevision, wearSkin } from "../skins/skins.js";
 
 /* The skins added on this device (skins/store.js); re-renders when one is
    added, updated or removed. */
 export const useInstalledSkins = () => useSyncExternalStore(onSkinsChange, installedSkins, installedSkins);
+
+/* A number that changes each time a skin pack finishes loading, so what is
+   read from loaded packs (their scenes) is read again. */
+export const useLoadedSkins = () => useSyncExternalStore(onSkinsLoaded, loadedRevision, loadedRevision);
 
 /* The skin picked in Look (appearance.skin): loads it the first time, then
    puts it on (skins/skins.js). Returns its parts once it is worn, or null

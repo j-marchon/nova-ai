@@ -78,6 +78,15 @@ const say = (text) => { $("sub-status").hidden = !text; $("sub-status").textCont
 async function act(fn) { if (!info || busy) return; busy = true; render(info); try { info = await fn(); } catch (error) { info = { ...info, problem: error.message }; } finally { busy = false; render(info); } }
 $("toggle").onclick = () => act(() => (info.running ? bridge.stop() : bridge.start()));
 $("minimize").onclick = () => bridge.window("minimize");
+/* Start with this computer: off unless turned on here */
+const autostartNote = (on) => (on ? "On: the Bridge starts without its window when you log in, so your phone can always reach it." : "Off: the Bridge runs only while you have it open.");
+const showAutostart = (on) => { $("autostart").setAttribute("aria-checked", String(!!on)); $("autostart-note").textContent = autostartNote(on); };
+if (bridge.autostart) bridge.autostart().then(showAutostart).catch(() => { $("autostart").closest(".card").hidden = true; });
+else $("autostart").closest(".card").hidden = true;
+$("autostart").onclick = async () => {
+  const want = $("autostart").getAttribute("aria-checked") !== "true";
+  try { showAutostart(await bridge.autostart(want)); } catch (e) { say(e.message); }
+};
 $("wifi-copy").onclick = async () => {
   const b = $("wifi-copy");
   try { await navigator.clipboard.writeText($("wifi-addr").textContent); b.textContent = "Copied"; }
@@ -117,7 +126,9 @@ $("claude-ok").onclick = () => { if ($("claude-ok").disabled) return; closeClaud
 
 document.addEventListener("click", async (e) => {
   const link = e.target.closest("[data-open]");
-  if (link && /^https:\/\/claude\.(ai|com)\//.test(link.dataset.open)) window.open(link.dataset.open);
+  /* a sign-in page the Bridge started (Google, Claude): opened in the browser
+     by the host's window-open handler, for when it did not open by itself */
+  if (link && /^https:\/\//.test(link.dataset.open)) window.open(link.dataset.open);
   const s = e.target.closest("[data-in]");
   if (s) {
     if (s.dataset.in === "claude") warnClaude(s);

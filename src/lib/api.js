@@ -210,9 +210,39 @@ async function nativeStream(plugin, url, init) {
   return new Response(NULL_BODY.has(status) ? null : body, { status, headers: head?.headers || {} });
 }
 
+/* fetch cannot tell how much of a request body has gone; an upload that
+   wants to show it (Sync's Send) goes by XMLHttpRequest instead, shaped like
+   fetch: a Response back, a TypeError when the network fails, an AbortError
+   when stopped, and no redirects followed. */
+function xhrFetch(url, { method = "GET", headers = {}, body = null, signal, onUploadProgress } = {}) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(abortError());
+    const xhr = new XMLHttpRequest();
+    xhr.open(method, url);
+    xhr.responseType = "blob";
+    for (const [k, v] of new Headers(headers)) xhr.setRequestHeader(k, v);
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable && e.total) onUploadProgress(e.loaded / e.total); };
+    xhr.onload = () => {
+      if (xhr.responseURL && xhr.responseURL !== url) return reject(new TypeError("The server redirected the request."));
+      const h = new Headers();
+      for (const line of xhr.getAllResponseHeaders().trim().split(/[\r\n]+/)) {
+        const i = line.indexOf(":");
+        if (i > 0) try { h.append(line.slice(0, i).trim(), line.slice(i + 1).trim()); } catch {}
+      }
+      resolve(new Response(NULL_BODY.has(xhr.status) ? null : xhr.response, { status: xhr.status, headers: h }));
+    };
+    xhr.onerror = () => reject(new TypeError("Network request failed"));
+    xhr.ontimeout = xhr.onerror;
+    xhr.onabort = () => reject(abortError());
+    signal?.addEventListener("abort", () => xhr.abort(), { once: true });
+    xhr.send(body);
+  });
+}
+
 export async function send(url, init = {}) {
   checkProviderUrl(url);
   const plugins = needsNative(url) && nativePlugins();
+  if (!plugins && init.onUploadProgress && typeof XMLHttpRequest === "function") return xhrFetch(url, init);
   if (!plugins) return fetch(url, { ...init, redirect: "error" });
   if (plugins.NovaHttp && (init.body == null || typeof init.body === "string")) {
     return nativeStream(plugins.NovaHttp, url, init);

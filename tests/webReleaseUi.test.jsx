@@ -46,7 +46,8 @@ afterEach(() => {
 
 describe("web backup controls", () => {
   it("exports without credentials unless explicitly enabled, and hides native daily backups", async () => {
-    await render(<BackupPanel data={emptyData} update={vi.fn()} />);
+    const update = vi.fn();
+    await render(<BackupPanel data={emptyData} update={update} />);
     expect(host.textContent).not.toContain("Daily backup");
     expect(host.textContent).toContain("Start here");
     expect(host.querySelector('a[href="./privacy.html"]')).not.toBeNull();
@@ -54,9 +55,13 @@ describe("web backup controls", () => {
     expect(mocks.parts).toHaveBeenLastCalledWith(emptyData, expect.any(String), expect.objectContaining({ includeCredentials: false }));
     expect(mocks.save).toHaveBeenLastCalledWith(expect.any(String), ["exported"], "application/json");
     expect(host.textContent).toContain("Download requested");
+    /* the switch is kept in settings, so Sync's Send follows it too */
     await click(host.querySelector('[role="switch"]'));
+    expect(update).toHaveBeenLastCalledWith({ settings: expect.objectContaining({ backupCredentials: true }) });
+    const on = { ...emptyData, settings: { ...emptyData.settings, backupCredentials: true } };
+    await render(<BackupPanel data={on} update={update} />);
     await click(button("Back up now"));
-    expect(mocks.parts).toHaveBeenLastCalledWith(emptyData, expect.any(String), expect.objectContaining({ includeCredentials: true }));
+    expect(mocks.parts).toHaveBeenLastCalledWith(on, expect.any(String), expect.objectContaining({ includeCredentials: true }));
   });
 
   it("shows Saving with progress while the backup is written and keeps buttons disabled", async () => {

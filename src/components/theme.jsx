@@ -18,6 +18,9 @@ import { ClipProgress, ClipPreview, Media, TrimBar } from "./media.jsx";
    carry its own mood. */
 export function ThemeSection({ theme, onChange }) {
   const [showBg, setShowBg] = useState(false);
+  /* the saved background being framed again for this screen, by index */
+  const [recrop, setRecrop] = useState(null);
+  const vp = useScreen();
   const t = { ...DEFAULT_THEME, ...(theme || {}) };
   const set = (patch) => onChange({ ...t, ...patch });
   const bgs = bgListOf(t);
@@ -52,13 +55,23 @@ export function ThemeSection({ theme, onChange }) {
           <div className="nv-fade-x flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
             {bgs.map((b, i) => (
               <div key={i} className="relative shrink-0">
-                <Media
-                  src={b.image}
-                  className="block w-14 object-cover rounded-lg border border-zinc-800"
-                  /* the render carries the screen shape it was framed for —
-                     0.64 is what the old 9/14 crops were baked at */
-                  style={{ aspectRatio: String(b.aspect || 0.64), opacity: Math.max(0.35, b.opacity) }}
-                />
+                {/* tap to frame it again for this screen (a still; a video
+                    or GIF keeps its framing) */}
+                <button
+                  type="button"
+                  disabled={!canRecrop(b)}
+                  onClick={() => setRecrop(i)}
+                  className="block rounded-lg overflow-hidden"
+                  aria-label={canRecrop(b) ? `Crop background ${i + 1} again for this screen` : `Background ${i + 1}`}
+                >
+                  <Media
+                    src={bgFor(b, vp).image}
+                    className="block w-14 object-cover rounded-lg border border-zinc-800"
+                    /* the render carries the screen shape it was framed for —
+                       0.64 is what the old 9/14 crops were baked at */
+                    style={{ aspectRatio: String(bgFor(b, vp).aspect || 0.64), opacity: Math.max(0.35, b.opacity) }}
+                  />
+                </button>
                 <button
                   type="button"
                   onClick={() => setBgs(bgs.filter((_, n) => n !== i))}
@@ -107,6 +120,19 @@ export function ThemeSection({ theme, onChange }) {
 
       </div>
 
+      {recrop != null && bgs[recrop] && (
+        <BgEditor
+          initial={{ original: bgFor(bgs[recrop], vp).image, opacity: bgs[recrop].opacity }}
+          theme={t}
+          onSave={(bg) => {
+            const { original, ...slim } = bg;
+            setBgs(bgs.map((b, n) => (n === recrop ? withCrop(b, slim) : b)));
+          }}
+          onDone={() => setRecrop(null)}
+          onClose={() => setRecrop(null)}
+        />
+      )}
+
       {showBg && (
         <BgEditor
           initial={null}
@@ -130,6 +156,25 @@ export function ThemeSection({ theme, onChange }) {
       )}
     </div>
   );
+}
+
+/* ---------- one background, two screen shapes ----------
+   A still is baked to the shape of the screen it was framed on. Framed
+   again on a screen of the other orientation (a phone's crop on a 16:9
+   desktop), the new crop is kept beside it as `alt`, so each screen shows
+   its own; ChatBackdrop fits the other one in whole until then. */
+const wide = (aspect) => (Number(aspect) || 0.64) >= 1;
+export function bgFor(b, vp) {
+  const want = vp.w >= vp.h;
+  if (b?.alt && wide(b.alt.aspect) === want && wide(b.aspect) !== want) return { ...b, ...b.alt };
+  return b;
+}
+const canRecrop = (b) => !!b?.image && !b.video && !b.animated;
+function withCrop(b, crop) {
+  const { alt, ...base } = b;
+  /* the same orientation as the saved crop replaces it; the other is kept beside */
+  if (wide(crop.aspect) === wide(b.aspect)) return { ...base, ...crop, ...(alt ? { alt } : {}) };
+  return { ...base, opacity: crop.opacity ?? b.opacity, alt: { image: crop.image, aspect: crop.aspect, scale: crop.scale, nx: crop.nx, ny: crop.ny } };
 }
 
 /* ---------- chat backdrop: crop, zoom and fade an image ---------- */

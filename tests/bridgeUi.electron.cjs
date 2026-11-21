@@ -16,8 +16,14 @@ if (!process.versions.electron) {
    /* the rounded, frameless window; Nova's own skin first */
    assert.equal(await js('getComputedStyle(document.querySelector(".frame")).borderTopLeftRadius'),'22px');
    assert.equal(await js('document.documentElement.dataset.skin'),'nova');
-   /* nothing but what was asked for: no switches, keys, addresses or models */
-   assert.equal(await js('document.querySelectorAll("[role=switch], #copy-key, #origins, #addr, #list, input").length'),0);
+   /* nothing but what was asked for: no keys, addresses or models, and one
+      switch, Start with this computer, off until turned on */
+   assert.equal(await js('document.querySelectorAll("#copy-key, #origins, #addr, #list, input").length'),0);
+   assert.equal(await js('document.querySelectorAll("[role=switch]").length'),1);
+   await wait('document.querySelector("#autostart").getAttribute("aria-checked") === "false"');
+   await js('document.querySelector("#autostart").click()');
+   await wait('document.querySelector("#autostart").getAttribute("aria-checked") === "true"');
+   assert.equal(await js('(async()=>(await bridge.callsForTest()).some(c=>c[0]==="autostart"&&c[1]===true))()'),true);
    await js('document.querySelector("#toggle").click()');
    await wait('document.querySelector("#state").textContent === "Running" && !document.querySelector("#toggle").disabled');
    /* a phone asks: its code, approve, then block and unblock it */

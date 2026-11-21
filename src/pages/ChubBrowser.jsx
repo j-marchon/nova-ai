@@ -1,17 +1,19 @@
 import { MotionList } from "../components/motion/MotionList.jsx";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import { Check, ExternalLink, Link2, RefreshCw, Search, ShieldCheck, Shuffle, Star, X } from "lucide-react";
+import { ArrowLeft, Check, ExternalLink, Link2, RefreshCw, Search, ShieldCheck, Shuffle, Star, User, X } from "lucide-react";
 import { AccBtn, Button, EmptyState, Modal, Skeleton } from "../components/ui.jsx";
 import { Media } from "../components/media.jsx";
-import { CHUB_PAGE, chubImport, chubNotes, chubSearch, isAdultHit, parseChubPath } from "../lib/chub.js";
+import { CHUB_PAGE, chubCreator, chubImport, chubNotes, chubPicture, chubSearch, isAdultHit, parseChubPath, parseChubQuery } from "../lib/chub.js";
 
 /* ---------- create: build and manage everything ---------- */
 
 /* ---------- Chub browser ----------
 
-   A tab inside Characters. Search and sort Chub's public library, star
-   cards into a Favorites list kept on this device, paste a link, and import
-   into your own characters. No content filter: that is left to you.
+   A tab inside Characters, laid out the way chub.ai is: search by words
+   and #tags, sort, open a card's page (its picture, creator, stats, tags and
+   notes), tap its creator for their profile and every card they made, tap a
+   tag for every card with it. Star cards into a Favorites list kept on this
+   device, paste a link, and import into your own characters.
 
    Results page in from the API 24 at a time as the list is scrolled. The
    card size follows the same small/large switch as your own characters. */
@@ -19,7 +21,6 @@ export const CHUB_SORTS = [
   { id: "random", label: "Random", icon: Shuffle },
   { id: "download_count", label: "Popular" },
   { id: "created_at", label: "New" },
-  { id: "last_activity_at", label: "Recent" },
   { id: "favorites", label: "Favorites", icon: Star },
 ];
 
@@ -32,6 +33,8 @@ export function ChubBrowser({ data, update, layout, controls, onStartChat }) {
   const [linkOpen, setLinkOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
+  const [tags, setTags] = useState([]);       // every card has all of these
+  const [creator, setCreator] = useState(""); // one creator's cards (their profile)
   const [sort, setSort] = useState("random");
   const [shuffle, setShuffle] = useState(0);
   const [hits, setHits] = useState([]);
@@ -80,7 +83,7 @@ export function ChubBrowser({ data, update, layout, controls, onStartChat }) {
     setLoading(true);
     setErr(null);
     try {
-      const r = await chubSearch({ q: query, page: n, sort, safe });
+      const r = await chubSearch({ q: query, page: n, sort, safe, tags, creator });
       if (id !== reqRef.current) return;
       setHits((prev) => {
         const base = reset ? [] : prev;
@@ -102,7 +105,7 @@ export function ChubBrowser({ data, update, layout, controls, onStartChat }) {
     setHits([]);
     setDone(false);
     load(1, true);
-  }, [query, sort, shuffle, safe]);
+  }, [query, sort, shuffle, safe, tags.join("\n"), creator]);
 
   /* next page when the bottom of the list scrolls into view */
   useEffect(() => {
@@ -142,6 +145,17 @@ export function ChubBrowser({ data, update, layout, controls, onStartChat }) {
 
   const shown = showingFavs ? favs : hits;
 
+  /* from a card's page: its creator's profile, or every card with a tag */
+  const openCreator = (name) => {
+    if (!name) return;
+    setDetail(null); setCreator(name); setTags([]); setQuery(""); setDraft("");
+    if (showingFavs || sort === "random") setSort("download_count");
+  };
+  const searchTag = (t) => {
+    setDetail(null); setCreator(""); setQuery(""); setDraft(""); setTags([t]);
+    if (showingFavs) setSort("download_count");
+  };
+
   /* The tiles are memoised, so they get one stable handle to the current
      callbacks rather than new functions on every render — otherwise a page
      of results arriving would redraw every tile already in the list. */
@@ -159,14 +173,22 @@ export function ChubBrowser({ data, update, layout, controls, onStartChat }) {
       {/* search, with the link import beside it */}
       <div className="flex items-center gap-2">
         <form
-          onSubmit={(e) => { e.preventDefault(); if (showingFavs) setSort("random"); setQuery(draft.trim()); }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (showingFavs) setSort("random");
+            /* "#tag" words become tag filters, added to the ones already on */
+            const { q, tags: more } = parseChubQuery(draft);
+            setQuery(q);
+            if (more.length) setTags((t) => [...new Set([...t, ...more])]);
+            setDraft(q);
+          }}
           className="relative flex-1 min-w-0"
         >
           <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-600 pointer-events-none" />
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            placeholder="Search Chub"
+            placeholder="Search Chub, or #tag"
             enterKeyHint="search"
             className="w-full h-10 rounded-full nv-glass pl-10 pr-4 text-sm text-zinc-100 placeholder-zinc-600 outline-none  focus:border-[var(--nv-edge-ink)]"
           />
@@ -218,10 +240,24 @@ export function ChubBrowser({ data, update, layout, controls, onStartChat }) {
             icon={X}
             onClick={() => { setDraft(""); setQuery(""); }}
             className="whitespace-nowrap shrink-0 text-zinc-500 hover:text-zinc-200"
+            aria-label={`Clear the search for ${query}`}
           >
             "{query}"
           </Button>
         )}
+        {!showingFavs && tags.map((t) => (
+          <Button
+            key={t}
+            variant="ghost"
+            size="sm"
+            icon={X}
+            onClick={() => setTags((list) => list.filter((x) => x !== t))}
+            className="whitespace-nowrap shrink-0 text-zinc-300 hover:text-zinc-100"
+            aria-label={`Remove the tag ${t}`}
+          >
+            #{t}
+          </Button>
+        ))}
       </div>
 
       {/* import by link */}
@@ -244,6 +280,9 @@ export function ChubBrowser({ data, update, layout, controls, onStartChat }) {
       )}
       {linkErr && <p className="text-[11px] text-zinc-100 mt-1.5">{linkErr}</p>}
       {importErr && !detail && <p className="text-[11px] text-zinc-100 mt-1.5">{importErr}</p>}
+
+      {/* a creator's profile, over their cards */}
+      {creator && !showingFavs && <CreatorHeader username={creator} onBack={() => setCreator("")} />}
 
       {/* the description and size switches, at the end of their own row */}
       {controls && <div className="flex items-center justify-end mt-3">{controls}</div>}
@@ -277,57 +316,81 @@ export function ChubBrowser({ data, update, layout, controls, onStartChat }) {
       )}
       {!showingFavs && <div ref={sentinel} className="h-1" />}
 
-      {/* one card, up close */}
+      {/* one card, up close: laid out like its page on chub.ai */}
       {d && (
-        <Modal title={d.name} onClose={() => setDetail(null)}>
-          <div className="space-y-4">
-            <div className="flex gap-3.5">
-              <Media src={dLocal?.avatar || d.avatar} alt={d.name} lazy={false} className="w-28 aspect-[3/4] object-cover rounded-xl bg-zinc-800 shrink-0" />
-              <div className="min-w-0 flex-1 space-y-2">
-                {d.tagline && <p className="text-sm text-zinc-300 leading-snug whitespace-pre-wrap break-words">{d.tagline}</p>}
-                <p className="text-[11px] text-zinc-500">
-                  {[d.fullPath.split("/")[0] && `by ${d.fullPath.split("/")[0]}`, d.stars != null && `${compact(d.stars)} downloads`, d.chats != null && `${compact(d.chats)} chats`, d.tokens != null && `${compact(d.tokens)} tokens`].filter(Boolean).join(" · ")}
-                </p>
-                {d.topics?.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    {d.topics.slice(0, 14).map((t) => (
-                      <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--nv-control)] text-zinc-400">{t}</span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <ChubNotes fullPath={d.fullPath} tagline={d.tagline} />
-
-            {importErr && <p className="text-[11px] text-zinc-100">{importErr}</p>}
-
-            <div className="flex items-center gap-2">
-              {dLocal ? (
-                <AccBtn onClick={() => { setDetail(null); onStartChat(dLocal); }} className="flex-1">
-                  Start chat
-                </AccBtn>
-              ) : (
-                <AccBtn disabled={importing === d.fullPath} onClick={() => runImport(d.fullPath)} className="flex-1">
-                  {importing === d.fullPath ? "Importing..." : "Import"}
-                </AccBtn>
+        <Modal title={d.name} wide onClose={() => setDetail(null)}>
+          <div className="grid gap-4 sm:grid-cols-[minmax(0,15rem)_minmax(0,1fr)]">
+            <Media src={dLocal?.avatar || chubPicture(d)} alt={d.name} lazy={false} className="w-full max-w-[15rem] mx-auto sm:mx-0 aspect-[2/3] object-cover rounded-2xl bg-zinc-800" />
+            <div className="min-w-0 space-y-3">
+              {(d.creator || d.fullPath.split("/")[0]) && (
+                <button
+                  type="button"
+                  onClick={() => openCreator(d.creator || d.fullPath.split("/")[0])}
+                  className="inline-flex items-center gap-2 text-sm text-zinc-200 hover:text-zinc-100"
+                  aria-label={`See every card by ${d.creator || d.fullPath.split("/")[0]}`}
+                >
+                  <span className="w-7 h-7 rounded-full bg-[var(--nv-control)] border border-[var(--nv-line)] inline-flex items-center justify-center"><User size={14} /></span>
+                  <span className="underline underline-offset-4 decoration-[var(--nv-line-strong)]">{d.creator || d.fullPath.split("/")[0]}</span>
+                </button>
               )}
-              <Button
-                onClick={() => toggleFav(d)}
-                className="w-10 px-0 shrink-0"
-                aria-label={isFav(d.fullPath) ? "Remove from favourites" : "Add to favourites"}
-              >
-                <Star style={isFav(d.fullPath) ? { color: "var(--acc)", fill: "var(--acc)" } : {}} className={`nv-btn-icon ${isFav(d.fullPath) ? "" : "text-zinc-400"}`} />
-              </Button>
-              <a
-                href={`https://chub.ai/characters/${d.fullPath}`}
-                target="_blank"
-                rel="noreferrer"
-                className="p-2.5 rounded-lg border border-zinc-800 bg-[var(--nv-control)] hover:border-zinc-700 text-zinc-400 "
-                aria-label="Open on chub.ai"
-              >
-                <ExternalLink size={16} />
-              </a>
+              {d.tagline && <p className="text-sm text-zinc-300 leading-snug whitespace-pre-wrap break-words">{d.tagline}</p>}
+              <p className="text-[11px] text-zinc-500">
+                {[
+                  d.stars != null && `${compact(d.stars)} downloads`,
+                  d.chats != null && `${compact(d.chats)} chats`,
+                  d.favorites != null && `${compact(d.favorites)} favourites`,
+                  d.rating != null && `${d.rating.toFixed(1)}★${d.ratings ? ` (${compact(d.ratings)})` : ""}`,
+                  d.tokens != null && `${compact(d.tokens)} tokens`,
+                  d.createdAt && `made ${new Date(d.createdAt).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}`,
+                ].filter(Boolean).join(" · ")}
+              </p>
+              {d.topics?.length > 0 && (
+                <div className="flex flex-wrap gap-1.5" aria-label="Tags">
+                  {d.topics.slice(0, 24).map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => searchTag(t)}
+                      className="text-[11px] px-2 py-0.5 rounded-full bg-[var(--nv-control)] border border-[var(--nv-line)] text-zinc-300 hover:text-zinc-100 hover:border-[var(--nv-line-strong)]"
+                      aria-label={`Every card tagged ${t}`}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {importErr && <p className="text-[11px] text-zinc-100">{importErr}</p>}
+
+              <div className="flex items-center gap-2">
+                {dLocal ? (
+                  <AccBtn onClick={() => { setDetail(null); onStartChat(dLocal); }} className="flex-1">
+                    Start chat
+                  </AccBtn>
+                ) : (
+                  <AccBtn disabled={importing === d.fullPath} onClick={() => runImport(d.fullPath)} className="flex-1">
+                    {importing === d.fullPath ? "Importing..." : "Import"}
+                  </AccBtn>
+                )}
+                <Button
+                  onClick={() => toggleFav(d)}
+                  className="w-10 px-0 shrink-0"
+                  aria-label={isFav(d.fullPath) ? "Remove from favourites" : "Add to favourites"}
+                >
+                  <Star style={isFav(d.fullPath) ? { color: "var(--acc)", fill: "var(--acc)" } : {}} className={`nv-btn-icon ${isFav(d.fullPath) ? "" : "text-zinc-400"}`} />
+                </Button>
+                <a
+                  href={`https://chub.ai/characters/${d.fullPath}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="p-2.5 rounded-lg border border-zinc-800 bg-[var(--nv-control)] hover:border-zinc-700 text-zinc-400 "
+                  aria-label="Open on chub.ai"
+                >
+                  <ExternalLink size={16} />
+                </a>
+              </div>
+
+              <ChubNotes fullPath={d.fullPath} tagline={d.tagline} />
             </div>
           </div>
         </Modal>
@@ -350,7 +413,15 @@ const ChubTile = memo(function ChubTile({ h, mine, fav, big, showDesc, actions }
     >
       <button onClick={() => actions.current.open(h)} className="block w-full text-left">
         <div className="aspect-[3/4] bg-[var(--nv-control)] relative overflow-hidden">
-          <img src={h.avatar} alt={h.name} loading="lazy" decoding="async" className="w-full h-full object-cover   " />
+          {/* the full portrait, falling back to Chub's small square if it will not load */}
+          <img
+            src={chubPicture(h)}
+            alt={h.name}
+            loading="lazy"
+            decoding="async"
+            onError={(e) => { if (h.avatar && e.currentTarget.src !== h.avatar) e.currentTarget.src = h.avatar; }}
+            className="w-full h-full object-cover object-top"
+          />
 
           {mine && (
             <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-full bg-[var(--nv-control)] text-[9px] text-zinc-200 border border-[var(--nv-edge-ink)] inline-flex items-center gap-1">
@@ -382,6 +453,45 @@ const ChubTile = memo(function ChubTile({ h, mine, fav, big, showDesc, actions }
     </div>
   );
 });
+
+/* A creator's profile, the way chub.ai shows it above their cards: their
+   picture and name, followers and card count, and their bio. */
+function CreatorHeader({ username, onBack }) {
+  const [u, setU] = useState(null);
+  const [more, setMore] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    setU(null); setMore(false);
+    chubCreator(username).then((x) => alive && setU(x)).catch(() => alive && setU({ username, name: username, bio: "", avatar: "" }));
+    return () => { alive = false; };
+  }, [username]);
+  const bio = u?.bio || "";
+  return (
+    <section aria-label={`${username} on Chub`} className="nv-fade mt-4 rounded-3xl nv-glass p-4 space-y-3">
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={onBack} aria-label="Back to all of Chub" className="w-8 px-0 shrink-0" />
+        {u?.avatar
+          ? <img src={u.avatar} alt="" className="w-12 h-12 rounded-full object-cover bg-zinc-800 shrink-0" />
+          : <span className="w-12 h-12 rounded-full bg-[var(--nv-control)] inline-flex items-center justify-center shrink-0"><User size={18} /></span>}
+        <div className="min-w-0 flex-1">
+          <p className="text-base text-zinc-100 font-medium truncate">{u?.name || username}</p>
+          <p className="text-[11px] text-zinc-500">
+            {[u?.name && u.name !== username && `@${username}`, u?.cards != null && `${compact(u.cards)} cards`, u?.followers != null && `${compact(u.followers)} followers`].filter(Boolean).join(" · ") || "Creator"}
+          </p>
+        </div>
+        <a href={`https://chub.ai/users/${encodeURIComponent(username)}`} target="_blank" rel="noreferrer" className="p-2.5 rounded-lg border border-zinc-800 bg-[var(--nv-control)] hover:border-zinc-700 text-zinc-400 shrink-0" aria-label="Open their profile on chub.ai">
+          <ExternalLink size={16} />
+        </a>
+      </div>
+      {bio && (
+        <div>
+          <p className={`text-[12.5px] text-zinc-300 leading-relaxed whitespace-pre-wrap break-words ${more ? "" : "line-clamp-3"}`}>{bio}</p>
+          {bio.length > 180 && <button type="button" onClick={() => setMore((m) => !m)} className="text-[11px] underline underline-offset-2 text-zinc-500 mt-1">{more ? "Less" : "More"}</button>}
+        </div>
+      )}
+    </section>
+  );
+}
 
 /* The card's full public description, fetched when its sheet opens, and
    shown whole: the sheet itself scrolls, and drags up to a full screen. */

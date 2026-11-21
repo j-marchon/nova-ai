@@ -148,6 +148,15 @@ dialog.warn p { font-weight: 500; }
 .btn.danger .count { font-variant-numeric: tabular-nums; margin-left: 4px; opacity: .85; }
 
 /* ---------- Aero: glass, water and a city by the lake ---------- */
+/* an on/off switch: the track lights up when on */
+.switch { flex: none; width: 40px; height: 24px; border-radius: 99px; border: 1px solid var(--line-strong); background: var(--control); padding: 2px; cursor: pointer; transition: background .2s; }
+.switch span { display: block; width: 18px; height: 18px; border-radius: 50%; background: var(--muted); transition: transform .25s cubic-bezier(.2, 0, 0, 1), background .2s; }
+.switch[aria-checked="true"] { background: var(--primary); border-color: var(--primary); }
+.switch[aria-checked="true"] span { transform: translateX(16px); background: var(--on-primary); }
+.switch:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+#autostart-label small { white-space: normal; }
+@media (prefers-reduced-motion: reduce) { .switch, .switch span { transition: none; } }
+
 /* the Wi-Fi address, big enough to read across a desk */
 #wifi-card .grow small { white-space: normal; }
 .addr { display: block; font-size: 22px; font-weight: 600; letter-spacing: .01em; font-variant-numeric: tabular-nums; user-select: text; margin-bottom: 2px; }

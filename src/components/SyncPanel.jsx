@@ -5,14 +5,18 @@ import { AccBtn, Button } from "./ui.jsx";
 import { backupSummary } from "../lib/backup.js";
 import { cancelWhere } from "../lib/activity.js";
 import { timeAgo } from "../lib/util.js";
-import { SyncBehind, mergeLibrary, replaceLibrary, syncEndpoint, syncGet, syncSend, syncStatus } from "../lib/sync.js";
+import { SyncBehind, applySync, mergeLibrary, syncEndpoint, syncGet, syncSend, syncStatus } from "../lib/sync.js";
 import { exportPacks, importPacks, skinNote } from "../skins/store.js";
 
 /* ---------- Sync through Nova Bridge (lib/sync.js) ----------
 
-   Send puts this device's library on the Bridge; Get brings the Bridge's
-   copy here to merge or replace. The revision this device last saw is kept
-   in its own settings, which never travel. */
+   Send puts this device's backup on the Bridge: the same file Back up now
+   writes, with the Backup switches above (API keys, skins). Get brings the
+   Bridge's copy here to merge or replace, settings included (lib/sync.js
+   says what stays on each device). The revision this device last saw is
+   kept in this device's own settings. */
+const mb = (bytes) => `${(bytes / 1048576).toFixed(bytes < 10485760 ? 1 : 0)} MB`;
+const secs = (ms) => `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)} s`;
 export function SyncPanel({ data, update }) {
   const s = data.settings;
   const hasBridge = !!syncEndpoint(s);
@@ -21,7 +25,7 @@ export function SyncPanel({ data, update }) {
   const [note, setNote] = useState(null); // { ok, text }
   const [behind, setBehind] = useState(false);
   const [pending, setPending] = useState(null); // { state, rev } from Get
-  const [progress, setProgress] = useState(null);
+  const [progress, setProgress] = useState(null); // { f, phase }
 
   const check = async (signal) => {
     setBusy("status");
@@ -37,14 +41,20 @@ export function SyncPanel({ data, update }) {
   }, [hasBridge]);
 
   const send = async (force = false) => {
-    setBusy("send"); setNote(null); setBehind(false); setProgress(0);
+    setBusy("send"); setNote(null); setBehind(false); setProgress({ f: 0, phase: "build" });
+    const t0 = performance.now();
     try {
-      /* the skins added on this device go too */
-      const skins = await exportPacks();
-      const next = await syncSend(s, data, { baseRev: force ? null : (s.syncRev ?? 0), version, skins, onProgress: (f) => setProgress(Math.floor(f * 100)) });
+      /* the same file as Back up now, with its switches */
+      const skins = s.backupSkins ? await exportPacks() : null;
+      let shown = -1;
+      const next = await syncSend(s, data, {
+        baseRev: force ? null : (s.syncRev ?? 0), version, skins, includeCredentials: !!s.backupCredentials,
+        onProgress: (f, phase) => { const pc = Math.floor(f * 100); if (pc !== shown || phase === "upload") { shown = pc; setProgress({ f: pc, phase }); } },
+      });
       setMeta(next);
       update((d) => ({ ...d, settings: { ...d.settings, syncRev: next.rev, syncAt: Date.now() } }));
-      setNote({ ok: true, text: "Sent. Your other devices can get it from the Bridge now." });
+      const what = [s.backupCredentials && "API keys", skins?.length && "skins"].filter(Boolean).join(" and ");
+      setNote({ ok: true, text: `Sent ${next.bytes ? mb(next.bytes) : "the backup"} in ${secs(performance.now() - t0)}${what ? `, with ${what}` : ""}. Your other devices can get it from the Bridge now.` });
     } catch (e) {
       if (e instanceof SyncBehind) { setBehind(true); setNote({ ok: false, text: e.message }); }
       else setNote({ ok: false, text: e.message || "Could not send to the Bridge." });
@@ -53,7 +63,8 @@ export function SyncPanel({ data, update }) {
 
   const get = async () => {
     setBusy("get"); setNote(null); setPending(null);
-    try { setPending(await syncGet(s)); }
+    const t0 = performance.now();
+    try { setPending({ ...(await syncGet(s)), took: performance.now() - t0 }); }
     catch (e) { setNote({ ok: false, text: e.message || "Could not get the Bridge's copy." }); }
     finally { setBusy(null); }
   };
@@ -63,16 +74,19 @@ export function SyncPanel({ data, update }) {
     try {
       const { state, rev } = pending;
       let text;
+      /* the library merged or replaced; settings, response styles and
+         appearance from the copy, keeping what is this device's own */
+      const applied = (d) => { const next = applySync(d, state, how); return { ...d, ...next, settings: { ...next.settings, syncRev: rev, syncAt: Date.now() } }; };
       if (how === "merge") {
         const { added, updated } = mergeLibrary(data, state);
         /* what this device has that the Bridge's copy lacks */
         const back = mergeLibrary(state, data);
-        await update((d) => ({ ...d, ...mergeLibrary(d, state).patch, settings: { ...d.settings, syncRev: rev, syncAt: Date.now() } }), { durable: true });
-        text = `${added || updated ? `Merged: ${added} added, ${updated} updated.` : "Nothing new on the Bridge."}${back.added || back.updated ? " Send to share this device's changes back." : ""}`;
+        await update(applied, { durable: true });
+        text = `${added || updated ? `Merged: ${added} added, ${updated} updated` : "No new characters or chats"}; settings and response styles updated.${back.added || back.updated ? " Send to share this device's changes back." : ""}`;
       } else {
         cancelWhere(() => true);
-        await update((d) => ({ ...d, ...replaceLibrary(state), settings: { ...d.settings, syncRev: rev, syncAt: Date.now() } }), { durable: true });
-        text = "This device now matches the Bridge's copy.";
+        await update(applied, { durable: true });
+        text = "This device now matches the Bridge's copy, settings included.";
       }
       /* either way, skins are only added or updated, never removed */
       text += skinNote(await importPacks(pending.skins));
@@ -90,7 +104,7 @@ export function SyncPanel({ data, update }) {
         <div className="flex-1 min-w-0">
           <p className="text-sm text-zinc-100">Sync with Nova Bridge</p>
           <p className="text-[11px] text-zinc-500 leading-snug mt-0.5">
-            Share characters, universes, personas, lorebooks, chats and added skins between your computer and phone through the Bridge. Settings and keys stay on each device.
+            Send puts this device's backup on the Bridge, the same file Back up now makes: characters, chats, personas, lorebooks, settings, response styles and appearance, plus API keys and skins when those switches above are on. Get brings it to another device. Each device keeps its own Bridge connection and UI size.
           </p>
         </div>
         {hasBridge && <Button size="sm" icon={RefreshCw} aria-label="Check the Bridge again" onClick={() => check()} disabled={!!busy} />}
@@ -111,7 +125,7 @@ export function SyncPanel({ data, update }) {
 
       <div className="flex gap-2">
         <Button size="lg" icon={CloudUpload} onClick={() => send(false)} disabled={!hasBridge || !!busy} className="flex-1">
-          {busy === "send" ? (progress ? `Sending... ${progress}%` : "Sending...") : "Send"}
+          {busy === "send" ? (progress?.phase === "upload" ? `Sending... ${progress.f}%` : progress?.f ? `Preparing... ${progress.f}%` : "Preparing...") : "Send"}
         </Button>
         <Button size="lg" icon={CloudDownload} onClick={get} disabled={!hasBridge || !!busy || meta?.rev === 0} className="flex-1">
           {busy === "get" ? "Getting..." : "Get"}
@@ -128,8 +142,8 @@ export function SyncPanel({ data, update }) {
       {pending && (
         <div className="px-3.5 py-3 rounded-2xl border border-[var(--nv-edge-ink)] bg-zinc-900 space-y-2.5">
           <p className="text-sm text-zinc-100">The Bridge's copy{meta?.device ? ` from ${meta.device}` : ""}</p>
-          <p className="text-[11px] text-zinc-100">{backupSummary(pending.state, pending.skins)}</p>
-          <p className="text-[11px] text-zinc-400">Merge keeps everything on both, and the newer copy of anything changed on both. It never deletes. Replace makes this device's library match the Bridge exactly; its settings and keys stay. Either way, skins from the Bridge are added and this device keeps its own.</p>
+          <p className="text-[11px] text-zinc-100">{backupSummary(pending.state, pending.skins)}{pending.took ? ` · got in ${secs(pending.took)}` : ""}</p>
+          <p className="text-[11px] text-zinc-400">Merge keeps everything on both, and the newer copy of anything changed on both; it never deletes characters or chats. Replace makes this device's library match the Bridge exactly. Either way this device takes the copy's settings, response styles and appearance, and keeps its own Bridge connection, UI size, and any key the copy does not carry. Skins from the Bridge are added and this device keeps its own.</p>
           <div className="flex gap-2">
             <AccBtn onClick={() => apply("merge")} disabled={!!busy} className="flex-1">{busy === "merge" ? "Merging..." : "Merge"}</AccBtn>
             <Button onClick={() => apply("replace")} disabled={!!busy} className="flex-1">{busy === "replace" ? "Replacing..." : "Replace"}</Button>

@@ -30,8 +30,10 @@ import { rememberData } from "./components/ErrorBoundary.jsx";
 import { RecoveryScreen } from "./components/RecoveryScreen.jsx";
 import { Splash } from "./components/Splash.jsx";
 import { useSkin } from "./components/useSkin.js";
-import { loadedSkin, skinOf, skinScheme, storedSkin } from "./skins/skins.js";
+import { loadedSkin, sceneSetOf, skinOf, skinScheme, storedSkin } from "./skins/skins.js";
+import { LayeredScene } from "./skins/LayeredScene.jsx";
 import { exportPacks } from "./skins/store.js";
+import { applySkinIcon } from "./skins/icons.js";
 import { version } from "../package.json";
 import { uid } from "./lib/util.js";
 import { isVideo } from "./lib/video.js";
@@ -60,6 +62,21 @@ const SPLASH = import.meta.env?.MODE !== "test";
 /* A hidden tab keeps the data it last showed, so changes made elsewhere (a
    reply landing in a chat, a spend tally) do not re-render it in the
    background. It catches up the moment it is shown. */
+/* Whether the window is wide enough for the desktop layout (the rail, the
+   Chats list beside the open chat): the same 1024px as index.css. */
+const WIDE = "(min-width: 1024px)";
+function useWide() {
+  const [wide, setWide] = useState(() => typeof window !== "undefined" && !!window.matchMedia?.(WIDE).matches);
+  useEffect(() => {
+    const m = window.matchMedia?.(WIDE);
+    if (!m) return undefined;
+    const on = () => setWide(m.matches);
+    m.addEventListener?.("change", on);
+    return () => m.removeEventListener?.("change", on);
+  }, []);
+  return wide;
+}
+
 function useWhileShown(value, shown) {
   const [kept, setKept] = useState(value);
   if (shown && kept !== value) setKept(value);
@@ -119,6 +136,9 @@ export default function App() {
 
 function Nova({ data, setData }) {
   const [page, setPage] = useState("create"); // create | history | settings | chat
+  /* a wide window (the desktop app, a laptop browser): Chats becomes a list
+     beside the open chat, and the rail stays */
+  const desktop = useWide();
   const [activeChatId, setActiveChatId] = useState(null);
   const [editing, setEditing] = useState(null); // { type, item }
   const [chatOrigin, setChatOrigin] = useState("create"); // tab a chat was opened from
@@ -365,6 +385,9 @@ function Nova({ data, setData }) {
 
   /* leaving a chat returns you wherever you opened it from */
   const goBackFromChat = () => navigate("close", () => setPage(chatOrigin || "history"));
+  /* on a wide window a chat opens beside the Chats list, wherever it was
+     opened from, and closing it leaves the list */
+  const split = desktop && (page === "chat" || page === "history");
   const navRef = useRef(navigate);
   navRef.current = navigate;
 
@@ -607,7 +630,7 @@ function Nova({ data, setData }) {
 
   /* a tab shows when it is the page, and under the chat while a back
      gesture is peeking at the tab the chat will return to */
-  const shows = (p) => page === p || (peek && page === "chat" && (chatOrigin || "history") === p);
+  const shows = (p) => page === p || (peek && page === "chat" && (chatOrigin || "history") === p) || (p === "history" && desktop && page === "chat");
   const createData = useWhileShown(data, page === "create");
   const historyData = useWhileShown(data, page === "history");
   const settingsData = useWhileShown(data, page === "settings");
@@ -627,11 +650,20 @@ function Nova({ data, setData }) {
   useMotionRoot(motionRoot, data.appearance?.motion || "full");
   const ap = data.appearance;
   /* a skin drawn for one mode (Aero is light) wears it whatever Mode says */
-  const light = (skinScheme(skinOf(ap)) || scheme) === "light";
-  const skin = useSkin(skinOf(ap));
+  /* Look → Skin in chats off: a chat wears Nova's standard look, so it is
+     only the story and its own backdrop; the skin comes back on leaving */
+  const plainChat = page === "chat" && ap.skinInChat === false;
+  const worn = plainChat ? "nova" : skinOf(ap);
+  const light = (skinScheme(worn) || scheme) === "light";
+  const skin = useSkin(worn);
+  /* its layered scenes, if it has them (Nova's own; a pack's once loaded);
+     a chat in the plain look shows none */
+  const sceneSet = plainChat ? null : worn === "nova" || skin ? sceneSetOf(worn) : null;
   /* the desktop app's Nova Bridge window wears the same skin */
   const skinId = skinOf(ap);
   useEffect(() => { window.novaDesktop?.setSkin?.(skinId); }, [skinId]);
+  /* and the app's icon on the phone (skins/icons.js) */
+  useEffect(() => { if (loaded) applySkinIcon(skinId); }, [skinId, loaded]);
   const SkinBackground = skin?.Background;
   /* for the next startup screen, which shows before the saved data loads */
   useEffect(() => { try { localStorage.setItem("nova-scheme", light ? "light" : "dark"); } catch { /* private mode */ } }, [light]);
@@ -647,6 +679,8 @@ function Nova({ data, setData }) {
       data-motion={ap.motion || "full"}
       data-bubbles={ap.bubbles === "aligned" ? "aligned" : "full"}
       data-flow={ap.fx?.flow ? "1" : "0"}
+      data-split={split ? "1" : undefined}
+      data-scene={sceneSet ? "1" : undefined}
       style={{
         "--acc": light ? "#000" : "#fff",
         "--on-acc": light ? "#fff" : "#000",
@@ -662,7 +696,10 @@ function Nova({ data, setData }) {
         {restoreRecovery.current && <button className="px-3 underline" onClick={() => saveFile(backupName(), backupParts(restoreRecovery.current, version), "application/json").catch(() => showToast("Backup download failed", { tone: "warn" }))}>Export data from before restore</button>}
       </div>}
       {/* textured backdrop everywhere but the chat, which has its own */}
-      {(page !== "chat" || peek) && <PageBackdrop appearance={ap} light={light} />}
+      {(page !== "chat" || peek) && !sceneSet && <PageBackdrop appearance={ap} light={light} />}
+      {/* the skin's layered scene, behind every screen (and behind a chat,
+          sitting back, unless Look → Skin in chats is off) */}
+      {sceneSet && <LayeredScene scenes={sceneSet.scenes} base={sceneSet.base} sceneId={ap.scenes?.[worn]} invert={worn === "nova" && light} />}
       {/* a skin's own background, behind every screen and behind
           a chat with no backdrop of its own; a picture of your own covers it */}
       {SkinBackground && <SkinBackground dark={!light} paused={ap.bgPreset === "custom" && !!ap.bgImage && page !== "chat"} />}
@@ -701,12 +738,19 @@ function Nova({ data, setData }) {
           </div>
         </Activity>
         <Activity mode={shows("history") ? "visible" : "hidden"}>
-          <div className={tabClass} ref={page === "history" ? pageEl : undefined}>
+          <div className={`${tabClass} nv-tab-history`} ref={page === "history" ? pageEl : undefined}>
             <Suspense fallback={<PageSkeleton />}>
-              <HistoryPage data={historyData} update={update} openChat={pageActions.openFromHistory} />
+              <HistoryPage data={desktop && page === "chat" ? data : historyData} update={update} openChat={pageActions.openFromHistory} activeId={split && page === "chat" ? activeChatId : null} />
             </Suspense>
           </div>
         </Activity>
+        {/* the right of the Chats list on a wide window, before a chat is open */}
+        {split && page === "history" && (
+          <div className="nv-split-empty" aria-hidden>
+            <NovaMark size={34} />
+            <p className="nv-label">Pick a chat</p>
+          </div>
+        )}
         <Activity mode={shows("settings") ? "visible" : "hidden"}>
           <div className={tabClass} ref={page === "settings" ? pageEl : undefined}>
             <Suspense fallback={<PageSkeleton />}>
@@ -732,17 +776,17 @@ function Nova({ data, setData }) {
       {/* The dock: a floating instrument strip the pages scroll under. A
           block of accent slides to the current tab, with a hairline beam
           along its top edge. */}
-      {page !== "chat" && (
+      {(page !== "chat" || desktop) && (
         <nav className="nv-nav" aria-label="Main navigation">
           <div className="nv-dock nv-nav-dock nv-hair">
           <div className="nv-rail-brand"><NovaMark size={26} /></div>
           <div className="nv-nav-inner" ref={navigationRef}>
             <span className="nv-nav-marker" aria-hidden />
             <span className="nv-nav-trail" aria-hidden />
-            {navItems.map(n => <button key={n.id} onClick={() => goTab(n.id)} aria-current={page === n.id ? "page" : undefined}>
-              <n.icon size={20} strokeWidth={page === n.id ? 1.9 : 1.5} /><span>{n.label}</span>
+            {navItems.map(n => { const here = page === n.id || (page === "chat" && n.id === "history"); return <button key={n.id} onClick={() => goTab(n.id)} aria-current={here ? "page" : undefined}>
+              <n.icon size={20} strokeWidth={here ? 1.9 : 1.5} /><span>{n.label}</span>
               {n.id === "settings" && needsKey && <span className="nv-nav-badge" role="img" aria-label="Provider setup needed" />}
-            </button>)}
+            </button>; })}
           </div>
           </div>
         </nav>

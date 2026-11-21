@@ -181,6 +181,9 @@ export const emptyData = {
     activeProvider: "openrouter",
     /* Check for updates (lib/updates.js): off until the user turns it on */
     updateCheck: false,
+    /* Backup switches (Settings → You), followed by Sync's Send too:
+       API keys in the file (off), the skins added here (off) */
+    backupCredentials: false,
     /* Which model writes cards in the create forms, on OpenRouter. "" follows
        the chat model, which is what it always used to do silently. */
     writerModel: "",
@@ -254,6 +257,8 @@ export const emptyData = {
     /* the look: "nova" (standard) or the id of a skin pack (skins/skins.js);
        kept even while that skin is not on this device */
     skin: "nova",
+    /* the skin in chats too (Look → Skin in chats); off, chats wear Nova's own */
+    skinInChat: true,
     accent: "#ffffff",
     /* "dark" | "light" | "auto" (follows the phone) */
     scheme: "dark",
