@@ -528,7 +528,9 @@ html[data-skin="minimal"] .nv-root { --nv-shadow: none; --nv-lamp-line: transpar
   translate: calc(var(--px, 0) * var(--d, 0) * -22px) calc(var(--py, 0) * var(--d, 0) * -14px);
   transition: translate 1.2s cubic-bezier(.16, 1, .3, 1);
 }
-.nv-scene--invert { filter: invert(1); }
+/* only the picture is shown as its negative; the haze and the wash over it
+   keep their own colours */
+.nv-scene--invert .nv-scene-stage { filter: invert(1); }
 .nv-scene::after { content: ""; position: absolute; inset: 0; background: var(--nv-bg); opacity: 0; transition: opacity .6s ease; }
 .nv-scene[data-reading]::after { opacity: .42; }
 /* in light mode, a haze of daylight behind the title and tabs, so dark text

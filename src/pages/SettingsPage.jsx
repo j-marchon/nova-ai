@@ -212,6 +212,8 @@ export function AppearancePanel({ ap, onChange }) {
           title="Skin in chats"
           sub="Off: chats show in the standard look, just the story and its backdrop."
         />
+        {/* Android switches the launcher icon at the next start (skins/icons.js) */}
+        {window.Capacitor?.isNativePlatform?.() && <p className="text-[11px] text-zinc-500 leading-snug">The app icon follows the skin from the next time Nova starts.</p>}
       </Block>
 
       <Block label="Mode" i={1}>

@@ -17,6 +17,9 @@ public class NovaActivity extends BridgeActivity {
         /* the launcher icon follows the skin; see NovaIconPlugin */
         registerPlugin(NovaIconPlugin.class);
         super.onCreate(savedInstanceState);
+        /* a new app icon chosen last time: switch it now, while nothing is
+           open, and come back through the new launcher entry */
+        if (savedInstanceState == null && NovaIconPlugin.applyOnStart(this)) return;
     }
 
     /* A new system font size arrives here rather than restarting the app
