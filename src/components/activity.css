@@ -1,0 +1,19 @@
+/* Layout only. All motion is GSAP (components/motion). */
+/* the top stack: the activity island, then the toasts (App.jsx) */
+.nv-top { position: fixed; left: 0; right: 0; top: calc(var(--sa-t) + .5rem); z-index: 70; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 0 12px; pointer-events: none; }
+.nv-top > * { pointer-events: auto; }
+html[data-phone="1"] .nv-top { top: calc(var(--sa-t) + 3.5rem); }
+.nv-activity { position: relative; width: 100%; display: flex; justify-content: center; pointer-events: none; }
+.nv-toasts { width: min(100%, 22rem); pointer-events: none; }
+/* the deck: the top toast in the flow, the older ones in its box behind it */
+.nv-toast-deck { position: relative; padding-bottom: 14px; margin-bottom: -14px; }
+.nv-toast-layer { position: relative; }
+.nv-toast-under { position: absolute; left: 0; right: 0; top: 0; bottom: 14px; overflow: hidden; border-radius: 1rem; pointer-events: none; }
+.nv-toast-under .nv-toast-fade, .nv-toast-under .nv-toast { height: 100%; }
+.nv-activity-card { pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; width: min(100%, 22rem); border-radius: 22px; overflow: hidden; }
+.nv-activity-row { display: flex; align-items: center; gap: 8px; min-height: 44px; }
+.nv-activity-main { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 6px 4px 6px 12px; text-align: left; }
+.nv-activity-text { flex: 1 1 auto; min-width: 0; }
+.nv-activity-text > * { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nv-activity-ring { flex: 0 0 auto; width: 26px; height: 26px; display: grid; place-items: center; }
+.nv-activity-act { flex: 0 0 auto; min-width: 44px; min-height: 44px; display: grid; place-items: center; }

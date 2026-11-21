@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en" data-skin="nova">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nova Bridge</title>
+<link rel="stylesheet" href="bridge.css">
+</head>
+<body>
+<div class="frame">
+  <div class="field" aria-hidden="true">
+    <!-- Nova: the measuring grid, a lamp drifting over it, the odd star -->
+    <div class="grid"></div>
+    <div class="lamp"><div class="lamp-grid"></div></div>
+    <!-- Aero: sky, sun, clouds, the city on the shore, the lake, bubbles -->
+    <div class="sky"></div>
+    <img class="cloud c1" src="aero/cloud.svg" alt="">
+    <img class="cloud c2" src="aero/cloud.svg" alt="">
+    <img class="skyline" src="aero/skyline.svg" alt="">
+    <div class="lake"></div>
+    <div class="bubbles"></div>
+  </div>
+
+  <header class="bar">
+    <img class="mark" src="../../public/icon-192.png" alt="">
+    <span class="title">Nova Bridge</span>
+    <span class="grow"></span>
+    <button class="win" id="minimize" aria-label="Minimize"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
+    <button class="win close" id="close" aria-label="Close"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+  </header>
+
+  <main>
+    <section class="card hero" id="hero" data-s="off">
+      <span class="light" aria-hidden="true"></span>
+      <div class="grow"><h1 id="state">Stopped</h1><p id="sub"></p></div>
+      <button class="btn primary" id="toggle">Start</button>
+    </section>
+
+    <p class="note" id="err" role="alert" hidden></p>
+
+    <section class="stats">
+      <div class="card stat"><b id="n-subs">0</b><span>Subscriptions</span></div>
+      <div class="card stat"><b id="n-dev">0</b><span>Devices</span></div>
+      <div class="card stat"><b id="n-req">0</b><span id="l-req">Replies</span></div>
+    </section>
+
+    <section class="card" id="wifi-card" hidden><h2>Phones and tablets</h2>
+      <div class="row"><div class="grow"><b class="addr" id="wifi-addr"></b><small>Nova on a phone finds this computer by itself on the same Wi-Fi. If it does not, open Settings → Providers → Nova Bridge there, tap Enter address and type this.</small></div>
+        <button class="btn sm" id="wifi-copy">Copy</button></div></section>
+
+    <section class="card ask" id="pending-card" hidden><h2>New device</h2><div id="pending"></div></section>
+
+    <section class="card"><h2>Subscriptions</h2><p class="note">Each one signs in the way that company's own app does. Using a subscription outside its official app can break its terms, and the account can be limited or banned. Use them at your own risk.</p><div id="subs"></div><p class="note" id="sub-status" role="status" hidden></p></section>
+
+    <section class="card"><h2>Devices</h2><div id="sessions"></div><div id="blocked"></div></section>
+  </main>
+</div>
+
+<dialog id="claude-dialog" class="warn" aria-labelledby="claude-title" aria-describedby="claude-text">
+  <h2 id="claude-title">Before connecting Claude</h2>
+  <p id="claude-text">Anthropic's terms only allow a Claude Pro or Max plan inside Claude Code and claude.ai. Using it through Nova Bridge breaks those terms, and Anthropic can limit or permanently ban your account. Connect only if you accept that risk.</p>
+  <div class="actions">
+    <button class="btn" id="claude-cancel" autofocus>Cancel</button>
+    <button class="btn danger" id="claude-ok" disabled>Connect anyway</button>
+  </div>
+</dialog>
+
+<dialog id="close-dialog" aria-labelledby="close-title" aria-describedby="close-detail">
+  <h2 id="close-title">Stop Bridge and close?</h2>
+  <p id="close-detail"></p>
+  <div class="actions">
+    <button class="btn" id="keep-running" autofocus>Keep running</button>
+    <button class="btn danger" id="stop-close">Stop and close</button>
+  </div>
+</dialog>
+<script src="motion.js"></script>
+<script src="renderer.js"></script>
+</body>
+</html>

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Nova — Privacy and local data</title>
+  <style>
+    body { max-width: 44rem; margin: 0 auto; padding: 2rem 1.25rem; font: 1rem/1.65 system-ui, sans-serif; }
+    h1, h2 { line-height: 1.25; }
+    h2 { margin-top: 2rem; font-size: 1.2rem; }
+    a { color: inherit; text-underline-offset: .2em; }
+    a:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Privacy and local data</h1>
+    <p>Nova is a browser app for chatting with AI providers you choose. It does not require a Nova account. This release adds no analytics or advertising trackers.</p>
+
+    <h2>What stays on this device</h2>
+    <p>Nova stores characters, personas, chats, lorebooks, media, usage records and settings in this browser profile, using IndexedDB and a localStorage fallback. The installed web app uses the same site storage. App files may also be cached for offline use.</p>
+    <p>Saved API keys and other provider credentials are stored locally in plaintext. Nova does not encrypt this data. Someone with access to your browser profile, device or scripts running on this site may be able to read it. Use a device and site host you trust.</p>
+    <p>Data is separate for each site address and browser profile. It is not automatically synced or backed up. Clearing site data removes it; private browsing, storage limits or device loss can also remove it. Persistent storage, if granted by the browser, does not protect against all deletion.</p>
+
+    <h2>What leaves this device</h2>
+    <p>When you request a model response or use a generation feature, Nova sends the required prompt context to your selected provider or configured bridge. This can include chat messages, character and persona descriptions, lore, memory, social context and attachments. Nova sends the provider credentials needed for that request to the configured endpoint. Model and account requests also contact that endpoint.</p>
+    <p>The provider or bridge operator can process the information it receives under its own policies. Review those policies before sending private content. Selecting an endpoint gives its operator access to requests sent there; a custom endpoint is not automatically trustworthy.</p>
+    <p>Remote images, audio, videos and character searches or downloads contact their source hosts. These hosts can receive your network address and request information. Imported media can contain remote URLs that make requests when displayed; embedded or locally imported media is stored with your local data.</p>
+    <p>The website host receives normal web requests when the app loads or checks for updates and may keep access logs. Your browser, hosting provider, AI providers and remote content hosts have their own privacy practices.</p>
+
+    <h2>Nova Bridge</h2>
+    <p>The optional Nova Bridge runs separately. It forwards requests to supported providers and keeps subscription login credentials in a local auth file on the machine running it. Its API requires an approved device credential or the administrator key. Device approval is controlled in the Bridge window, which stores a hash of each approved device credential, its name and the requesting website. Revoke a device there to remove access. If someone else operates your bridge, they control that gateway and can receive the requests passing through it.</p>
+
+    <h2>Backups and sharing</h2>
+    <p>Backups are unencrypted files containing local app data and embedded media. API keys and credentials are excluded by default. The explicit credential option includes them; anyone with that file may be able to use those credentials. Chats or other text can still contain secrets you typed even when credential export is off. Keep all backups private.</p>
+    <p>Your browser controls where downloads are saved. A downloaded backup remains outside Nova’s site storage. Sharing a backup, exported chat or character file shares its contents with the recipient. Restoring a backup replaces current local data and provider settings.</p>
+    <p>The optional diagnostic export contains only the app version, browser platform and storage support/status. It does not include provider addresses, credentials or chats. Nova downloads it locally and does not automatically send it to anyone.</p>
+
+    <h2>Delete your data</h2>
+    <p>To remove Nova’s browser data, use your browser’s site-data settings to clear storage for this site, including IndexedDB, local storage and offline caches. Uninstalling a browser app may leave site data behind, so check the browser settings too. Repeat for other profiles, devices or site addresses you used.</p>
+    <p>Delete downloaded backups and exports separately, including copies in synced folders or shared locations. If you used Nova Bridge, revoke authorized devices and disconnect subscriptions in its window, then delete its local auth and device records separately if removing Bridge. Revoke provider access where needed. Removing local data does not delete requests or records already held by providers, hosts or recipients. Use their deletion controls or contact them for those records. Revoke exposed API keys with the provider.</p>
+    <p><a href="./">Return to Nova</a></p>
+  </main>
+</body>
+</html>

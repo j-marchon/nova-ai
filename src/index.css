@@ -1,0 +1,748 @@
+@import "tailwindcss";
+
+/* Softer corners everywhere: Tailwind's rounded-* scale, one step rounder. */
+@theme {
+  --radius-sm: 6px; --radius-md: 8px; --radius-lg: 10px; --radius-xl: 14px;
+  --radius-2xl: 18px; --radius-3xl: 26px;
+}
+/* Nova — monochrome. Motion is owned exclusively by components/motion. */
+:root {
+  --nv-ui-scale: 1;
+  --sa-t: calc(max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px)) / var(--nv-ui-scale));
+  --sa-r: calc(max(env(safe-area-inset-right, 0px), var(--safe-area-inset-right, 0px)) / var(--nv-ui-scale));
+  --sa-b: calc(max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px)) / var(--nv-ui-scale));
+  /* the same inset, never zeroed while the keyboard is up (the chat's dock) */
+  --sa-b0: calc(max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px)) / var(--nv-ui-scale));
+  --sa-l: calc(max(env(safe-area-inset-left, 0px), var(--safe-area-inset-left, 0px)) / var(--nv-ui-scale));
+}
+html[data-kb="1"] { --sa-b: 0px; }
+/* Sheets and the phone are padded clear of the keyboard; what they carry
+   glides up with it (lib/keyboard.js). A page gets the same room at its end,
+   so a field low on it can be scrolled above the keyboard. */
+.nv-kb { padding-bottom: calc(var(--kb, 0px) / var(--nv-ui-scale)); }
+html[data-kb="1"] body { padding-bottom: calc(var(--kb, 0px) / var(--nv-ui-scale)); }
+/* The chat is never resized for the keyboard (adjustNothing). The keyboard
+   slides up over its foot; the message box rides up on top of it, a
+   transform on the keyboard's own curve (Android's 285ms PathInterpolator
+   (0.2, 0, 0, 1); KEYBOARD in motion/runtime.js), and nothing above it
+   moves. The list gets the same room at its end at once, so its last lines
+   can still be scrolled clear; lib/keyboard.js scrolls it and glides its
+   content on the same curve, so what was above the box rises with it.
+   The dock stays clear while lifted (it used to turn solid black). */
+:root { --nv-kb-ms: 285ms; --nv-kb-hide-ms: 220ms; --nv-kb-ease: cubic-bezier(.2, 0, 0, 1); }
+.nv-chat-root { --nv-kb-lift: max(0px, calc(var(--kb, 0px) / var(--nv-ui-scale) - var(--sa-b0))); --nv-kb-room: var(--nv-kb-lift); }
+/* a message edited in place has the keyboard to itself: the dock stays down
+   behind it and the list gets the whole keyboard's room (lib/keyboard.js) */
+html[data-kb-for="edit"] .nv-chat-root { --nv-kb-lift: 0px; --nv-kb-room: calc(var(--kb, 0px) / var(--nv-ui-scale)); }
+.nv-chat-dock { padding-bottom: calc(0.75rem + var(--sa-b0)); transform: translateY(calc(-1 * var(--nv-kb-lift))); transition: transform var(--nv-kb-ms) var(--nv-kb-ease); will-change: transform; }
+.nv-chat-messages { padding-bottom: calc(1.5rem + var(--nv-kb-room)) !important; }
+/* The conversation ends at the box's top edge, which travels with it, so
+   nothing shows through or under the box while it is lifted: the space
+   around it is the chat's own background, as when the keyboard is down. */
+.nv-chat-list { clip-path: inset(0 0 var(--nv-kb-lift) 0); transition: clip-path var(--nv-kb-ms) var(--nv-kb-ease); }
+/* going down they land with the keyboard (KEYBOARD.hideMs) */
+html:not([data-kb="1"]) .nv-chat-dock, html:not([data-kb="1"]) .nv-chat-list { transition-duration: var(--nv-kb-hide-ms); }
+[data-motion="off"] .nv-chat-dock, [data-motion="off"] .nv-chat-list { transition: none; }
+html, body { overscroll-behavior: none; overflow-x: clip; }
+.nv-safe-x { padding-left: var(--sa-l); padding-right: var(--sa-r); }
+
+/* ---------- type ---------- */
+
+@font-face {
+  font-family: "Overused Grotesk";
+  src: url("./assets/fonts/OverusedGroteskRoman-VF.woff2") format("woff2");
+  font-weight: 300 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* corners: controls, cards, blocks, panels, sheets. Anything nested keeps
+     the same centre: outer radius = inner radius + the gap between them. */
+  --nv-r-control: 14px; --nv-r-card: 18px; --nv-r-block: 22px; --nv-r-panel: 28px; --nv-r-sheet: 28px;
+  --nv-system: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --nv-font: "Overused Grotesk", var(--nv-system);
+}
+
+.nv-root { font-family: var(--nv-font); }
+
+/* small uppercase labels: quiet, lightly tracked */
+.nv-root .uppercase.tracking-wide { letter-spacing: 0.06em; font-weight: 500; }
+.nv-display { letter-spacing: -0.03em; }
+
+
+
+/* Quiet monochrome surfaces. Only media supplies colour. */
+:root, [data-theme="dark"] {
+  color-scheme: dark;
+  /* In OKLCH, so lightness steps read as even steps. The page stays true
+     black; what sits on it gets lighter the higher it is (cards and blocks,
+     then controls, then sheets and menus), which is how depth reads in the
+     dark without shadows. */
+  --nv-bg: oklch(0 0 0); --nv-surface: oklch(0 0 0); --nv-ink: oklch(1 0 0); --nv-user: oklch(0 0 0); --nv-control-ink: oklch(0.77 0 0);
+  --nv-muted: oklch(1 0 0 / .56); --nv-faint: oklch(1 0 0 / .47); /* 4.7:1 on black (WCAG AA text) */ --nv-control-base: oklch(1 0 0 / .06); --nv-control-edge-base: oklch(1 0 0 / .12);
+  --nv-hairline: oklch(1 0 0 / .1); --nv-hairline-strong: oklch(1 0 0 / .22); --nv-grid: oklch(1 0 0 / .045);
+  --nv-raised-base: oklch(0.145 0 0); --nv-pane-base: oklch(0.185 0 0); --nv-scrim: oklch(0 0 0 / .72); --nv-grain-o: .09;
+  --acc: oklch(1 0 0); --acc-2: oklch(1 0 0); --acc-3: oklch(1 0 0); --on-acc: oklch(0 0 0);
+  --color-white: oklch(1 0 0); --color-black: oklch(0 0 0);
+  /* the one colour outside the greys: deleting, and nothing else */
+  --nv-danger: oklch(0.6 0.21 25); --nv-on-danger: oklch(1 0 0);
+}
+[data-theme="light"] {
+  --nv-danger: oklch(0.56 0.22 25);
+  color-scheme: light;
+  --nv-bg: oklch(1 0 0); --nv-surface: oklch(1 0 0); --nv-ink: oklch(0 0 0); --nv-user: oklch(0.948 0 0); --nv-control-ink: oklch(0 0 0);
+  --nv-muted: oklch(0 0 0 / .56); --nv-faint: oklch(0 0 0 / .54); /* 4.6:1 on white */ --nv-control-base: oklch(0 0 0 / .04); --nv-control-edge-base: oklch(0 0 0 / .12);
+  --nv-hairline: oklch(0 0 0 / .1); --nv-hairline-strong: oklch(0 0 0 / .24); --nv-grid: oklch(0 0 0 / .05);
+  --nv-raised-base: oklch(0.985 0 0); --nv-pane-base: oklch(0.985 0 0); --nv-scrim: oklch(0 0 0 / .28); --nv-grain-o: .06;
+  --acc: oklch(0 0 0); --acc-2: oklch(0 0 0); --acc-3: oklch(0 0 0); --on-acc: oklch(1 0 0);
+  --color-white: oklch(0 0 0); --color-black: oklch(1 0 0);
+}
+.nv-root {
+  --nv-control: var(--nv-control-base); --nv-pane: var(--nv-pane-base);
+  --nv-control-edge: var(--nv-control-edge-base);
+  --nv-line: var(--nv-hairline); --nv-line-strong: var(--nv-hairline-strong); --nv-shadow: none;
+  /* an edge in the ink colour, see-through so it blends with what is under
+     it instead of a hard white (or black) line */
+  --nv-edge-ink: color-mix(in oklch, var(--nv-ink) 42%, transparent);
+  --color-zinc-50: var(--nv-ink); --color-zinc-100: var(--nv-ink);
+  --color-zinc-200: var(--nv-ink); --color-zinc-300: var(--nv-ink);
+  --color-zinc-400: var(--nv-muted); --color-zinc-500: var(--nv-muted);
+  --color-zinc-600: var(--nv-muted); --color-zinc-700: var(--nv-control);
+  --color-zinc-800: var(--nv-control); --color-zinc-900: var(--nv-control); --color-zinc-950: var(--nv-bg);
+  background: var(--nv-bg); color: var(--nv-ink); isolation: isolate;
+}
+body { margin: 0; background: var(--nv-bg); }
+/* Default corners sit in the base layer, under Tailwind's utilities: a
+   control that says rounded-full or rounded-lg gets exactly that. (Unlayered,
+   these overrode every rounded-* class and boxed in round buttons.) */
+@layer base {
+  .nv-root :where(button,input,textarea,select) { border-radius: var(--nv-r-control); }
+  .nv-root :where(.nv-btn) { border-radius: var(--nv-btn-r); }
+}
+.nv-root :where(button,input,textarea,select) { touch-action: manipulation; }
+.nv-root :where(button) { cursor: pointer; font-weight: 450; }
+.nv-root :where(button:disabled) { cursor: not-allowed; opacity: .35; }
+.nv-root :where(.nv-btn) { font-weight: var(--nv-btn-weight); }
+/* Borders no longer establish hierarchy; keyboard focus remains explicit. */
+.nv-root :where(*:not(.nv-spin):not(.nv-crop-guide):not(.nv-hair):not([data-on="1"]):not([aria-pressed="true"]):not([aria-checked="true"]):not([data-highlight="1"])) { border-color: transparent !important; box-shadow: none !important; }
+.nv-glass-hover:hover { background: color-mix(in oklch, var(--nv-ink) 8%, var(--nv-control)); }
+.nv-root :where(:focus-visible) { outline: 2px solid var(--nv-ink); outline-offset: 3px; }
+.nv-root ::selection { background: var(--nv-ink); color: var(--nv-bg); }
+.nv-root :where(h1,h2,h3) { font-weight: 550; letter-spacing: -.025em; }
+.nv-root .nv-display { font-size: 23px; font-weight: 550; line-height: 1.2; }
+.nv-root .font-bold, .nv-root .font-semibold { font-weight: 550; }
+.nv-root :where(input:not([type=range]):not([type=file]),textarea,select) { background: var(--nv-control); color: var(--nv-ink); }
+.nv-glass, .nv-surface { background: var(--nv-control); color: var(--nv-ink); border-radius: var(--nv-r-block); }
+.nv-frost, .nv-panel { background: var(--nv-pane-base); color: var(--nv-ink); border-radius: var(--nv-r-panel); }
+.nv-panel, .nv-screen { --nv-control-edge: var(--nv-control-edge-base); --color-zinc-700: var(--nv-control-base); --color-zinc-800: var(--nv-control-base); --color-zinc-900: var(--nv-control-base); --nv-control: var(--nv-control-base); --nv-pane: var(--nv-pane-base); --nv-chat-panel: var(--nv-pane-base); }
+.nv-bar { background: transparent; }
+.nv-card { border-radius: var(--nv-r-card); background: var(--nv-control); }
+.nv-rule { display: none; }
+.nv-primary { background: var(--nv-ink); color: var(--nv-bg); }
+.nv-root .nv-selected, .nv-root [style*="background: var(--nv-ink)"] { color: var(--nv-bg); }
+.nv-root [data-inverted="1"] :where(span,p,svg), .nv-root [style*="background: var(--nv-ink)"] :where(span,p,svg,em,strong) { color: inherit !important; }
+.nv-sheet { border-radius: var(--nv-r-sheet) var(--nv-r-sheet) 0 0; max-height: calc(100dvh / var(--nv-ui-scale) - var(--sa-t) - 3rem); }
+.nv-sheet[data-full="1"] { height: calc(100dvh / var(--nv-ui-scale)); max-height: calc(100dvh / var(--nv-ui-scale)); border-radius: 0; }
+@media(min-width:640px) { .nv-sheet:not([data-full="1"]) { max-height: calc(80dvh / var(--nv-ui-scale)); border-radius: var(--nv-r-sheet); } }
+.nv-screen { background: var(--nv-bg); }
+.nv-collapse { display: grid; grid-template-rows: 0fr; }
+.nv-collapse[data-open="1"] { grid-template-rows: 1fr; }
+.nv-collapse > * { min-height: 0; overflow: hidden; }
+.nv-skel { position: relative; overflow: hidden; background: var(--nv-control); }
+.nv-skel-bar { position: absolute; inset: 0; background: var(--nv-control-base); transform: translateX(-100%); }
+.nv-msg, .nv-msg-edit { position: relative; border-radius: 20px; }
+.nv-msg-edit { outline: none; user-select: text; -webkit-user-select: text; caret-color: currentColor; }
+.nv-msg-edit:focus { outline: 1px dashed currentColor; outline-offset: 3px; }
+.nv-root .nv-msg :where(button,span,p) { color: inherit; }
+.nv-root .nv-msg button { background: transparent; }
+.nv-range { appearance: none; width: 100%; height: 32px; background: transparent; cursor: pointer; }
+.nv-range::-webkit-slider-runnable-track { height: 3px; background: var(--nv-control-base); border-radius: 99px; }
+.nv-range::-moz-range-track { height: 3px; background: var(--nv-control-base); border-radius: 99px; }
+.nv-range::-webkit-slider-thumb { appearance: none; width: 18px; height: 18px; margin-top: -7.5px; border-radius: 50%; background: var(--nv-ink); }
+.nv-range::-moz-range-thumb { width: 18px; height: 18px; border: 0; border-radius: 50%; background: var(--nv-ink); }
+.nv-scope-label { display: inline-block; overflow: hidden; }
+.nv-scope-glow, .nv-flow, .nv-fx-grain { display: none; }
+.nv-html { overflow-wrap: anywhere; }
+.nv-html details > summary { cursor: pointer; }
+.nv-html a { text-decoration: underline; }
+.nv-html table { display: block; max-width: 100%; overflow-x: auto; }
+.nv-html hr { margin: .5em 0; }
+/* Original floating bottom dock on every screen size. */
+.nv-nav { position: fixed; inset: auto 0 0; z-index: 30; pointer-events: none; padding: 0 calc(1rem + var(--sa-r)) calc(.75rem + var(--sa-b)) calc(1rem + var(--sa-l)); }
+.nv-nav-dock { max-width: 384px; margin: auto; padding: 6px; pointer-events: auto; }
+.nv-nav-inner { position: relative; display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); }
+.nv-nav-marker { position: absolute; inset: 0 auto auto 0; border-radius: 18px; background: var(--nv-control-base); pointer-events: none; }
+.nv-nav button { position: relative; z-index: 1; min-height: 56px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; color: var(--nv-muted); }
+.nv-nav button[aria-current="page"] { color: var(--nv-ink); }
+.nv-nav button span { font-size: 10.5px; }
+.nv-root .nv-chat-root { --nv-control-edge: var(--nv-chat-edge); --nv-control: var(--nv-chat-control); --nv-pane: var(--nv-chat-panel); --color-zinc-700: var(--nv-chat-control); --color-zinc-800: var(--nv-chat-control); --color-zinc-900: var(--nv-chat-control); }
+.nv-chat-root .nv-chat-header { background: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; }
+.nv-chat-root .nv-composer { border-radius: 24px; backdrop-filter: var(--nv-chat-blur); -webkit-backdrop-filter: var(--nv-chat-blur); }
+.nv-chat-root .nv-composer textarea { background: transparent; outline: 0; }
+.nv-root[data-motion="calm"] .nv-composer, .nv-root[data-motion="off"] .nv-composer,
+.nv-root[data-motion="calm"] .nv-chat-header, .nv-root[data-motion="off"] .nv-chat-header,
+[data-moving="1"] .nv-composer { backdrop-filter: none; -webkit-backdrop-filter: none; }
+@media(prefers-reduced-motion:reduce) { .nv-chat-header, .nv-composer { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; } }
+@media(pointer:coarse) { .nv-msg,.nv-hold { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; } }
+.nv-reorder { -webkit-touch-callout: none; user-select: none; }
+video[aria-hidden] { pointer-events: none; }
+.nv-root .nv-spin:not(svg)[class*="border"] { border-color: transparent; border-top-color: currentColor; }
+.nv-root .nv-composer:focus-within { outline: none; }
+
+/* Faint hairlines separate controls without lifting the AMOLED background. */
+.nv-root :where(.nv-btn--secondary:not([data-inverted="1"]),.nv-btn--danger,button[class*="border"]:not([data-on="1"]):not([aria-pressed="true"]):not([aria-checked="true"]):not([data-highlight="1"]),input:not([type="range"]):not([type="file"]),textarea,select,[role="radiogroup"],.nv-nav-dock,.nv-composer) {
+  border: 1px solid var(--nv-control-edge);
+  border-color: var(--nv-control-edge) !important;
+}
+.nv-root .nv-composer textarea { border: 0; }
+
+/* Global UI zoom includes px-sized icons and full-screen/portaled surfaces. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+.nv-root.min-h-screen, .nv-page-host.min-h-screen { min-height: calc(100dvh / var(--nv-ui-scale)); }
+@media (pointer: coarse) {
+  .nv-root :where(button,a[href],[role="button"]) {
+    min-height: calc(44px / var(--nv-ui-scale));
+    min-width: calc(44px / var(--nv-ui-scale));
+  }
+  .nv-root :where(input:not([type="file"]):not([type="checkbox"]):not([type="radio"]),select) { min-height: calc(44px / var(--nv-ui-scale)); }
+  .nv-root .nv-card .flex.gap-1 { flex-wrap: wrap; }
+  .nv-root :where(button,a[href]) { -webkit-tap-highlight-color: transparent; }
+}
+
+.nv-settings-tabs { display: flex; overflow-x: auto; max-width: 100%; padding: 2px 0; scrollbar-width: none; scroll-snap-type: x proximity; }
+.nv-popup { background: var(--nv-pane-base); color: var(--nv-ink); }
+
+/* Older Android WebViews ignore scrollbar-width and draw a line under scrolling rows. */
+.nv-no-scrollbar { scrollbar-width: none; }
+.nv-no-scrollbar::-webkit-scrollbar, .nv-settings-tabs::-webkit-scrollbar, .nv-composer-pickers::-webkit-scrollbar { display: none; }
+.nv-settings-tabs > button { flex: 0 0 auto; white-space: nowrap; min-height: max(42px,calc(44px / var(--nv-ui-scale))); scroll-snap-align: start; }
+
+
+/* One composer row: compact pickers yield space to anchored action buttons. */
+.nv-composer-actions { --nv-composer-hit: max(36px,calc(44px / var(--nv-ui-scale))); flex-wrap: nowrap; gap: 4px; width: 100%; max-width: 100%; }
+.nv-composer-pickers { display: flex; align-items: center; flex: 1 1 0; min-width: 0; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+.nv-composer-tools { display: flex; align-items: center; flex: 0 0 auto; gap: 4px; }
+.nv-root .nv-composer-actions button { display: inline-flex; align-items: center; justify-content: center; height: var(--nv-composer-hit); min-height: var(--nv-composer-hit); min-width: var(--nv-composer-hit); padding: 0 6px; }
+.nv-composer-pickers > button { flex: 1 1 0; }
+.nv-composer-pickers > span { flex: 0 0 var(--nv-composer-hit); }
+.nv-composer-pickers .nv-scope-btn { width: var(--nv-composer-hit); }
+.nv-composer-actions .nv-scope-label { display: none; }
+.nv-root .nv-composer-tools > button { flex: 0 0 var(--nv-composer-hit); width: var(--nv-composer-hit); padding: 0; }
+.nv-composer-actions svg { flex-shrink: 0; }
+@media(max-width:380px) { .nv-composer-pickers > button > span:not(.nv-ico) { display: none; } }
+.nv-chat-messages .nv-msg { max-width: 100%; overflow-wrap: anywhere; }
+
+.nv-message-actions { flex-wrap: nowrap; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.nv-message-actions > button, .nv-message-actions > div { flex-shrink: 0; }
+
+/* Tint only the caption behind text; the thumbnail itself stays untouched. */
+.nv-card-caption {
+  --color-white: oklch(1 0 0);
+  --color-zinc-300: oklch(1 0 0);
+  --color-zinc-400: oklch(1 0 0 / .7);
+  --nv-ink: oklch(1 0 0); --nv-bg: oklch(0 0 0); --nv-muted: oklch(1 0 0 / .7); --acc: oklch(1 0 0); --on-acc: oklch(0 0 0);
+  --nv-control: oklch(1 0 0 / .08);
+  background: oklch(0 0 0 / .28); color: oklch(1 0 0);
+}
+.nv-card-caption :where(p) { text-shadow: 0 1px 3px oklch(0 0 0 / .9), 0 0 1px oklch(0 0 0); }
+
+/* GSAP owns this custom property; native range input still owns its value. */
+.nv-range::-webkit-slider-thumb { transform: scale(var(--nv-thumb-scale, 1)); }
+.nv-range::-moz-range-thumb { transform: scale(var(--nv-thumb-scale, 1)); }
+
+/* ---------- buttons (Button in ui.jsx) ----------
+   Aligned by eye: the icon is a block (no inline-SVG baseline gap) and the
+   label is trimmed to its cap height, so both sit on one visual centre line.
+   Layered as components so className utilities (w-full, px-*, h-*) still win;
+   radius and weight are set unlayered above, like every other button. */
+:root {
+  --nv-btn-h-sm: 32px; --nv-btn-h-md: 40px; --nv-btn-h-lg: 48px;
+  --nv-btn-px: 16px; --nv-btn-gap: 6px; --nv-btn-r: var(--nv-r-control);
+  --nv-btn-icon: 16px; --nv-btn-weight: 500;
+}
+.nv-phone, [data-testid="phone"] { --nv-btn-r: 9999px; }
+@layer components {
+  .nv-btn {
+    --nv-btn-h: var(--nv-btn-h-md); --nv-btn-pad: var(--nv-btn-px);
+    display: inline-flex; align-items: center; justify-content: center; gap: var(--nv-btn-gap);
+    min-height: var(--nv-btn-h); padding: 0 var(--nv-btn-pad);
+    font-size: 14px; line-height: 1; text-align: center; color: var(--nv-ink); background: transparent;
+    /* on/off (Chub's Safe, Info, Link...) eases between filled and outlined
+       instead of snapping */
+    transition: background-color .22s ease, color .22s ease, border-color .22s ease, box-shadow .22s ease;
+  }
+  [data-motion="off"] .nv-btn { transition: none; }
+  .nv-btn--sm { --nv-btn-h: var(--nv-btn-h-sm); --nv-btn-pad: 12px; --nv-btn-icon: 14px; font-size: 12px; }
+  .nv-btn--lg { --nv-btn-h: var(--nv-btn-h-lg); --nv-btn-pad: 20px; --nv-btn-icon: 18px; font-size: 15px; }
+  .nv-btn--primary { background: var(--nv-ink); color: var(--on-acc, var(--nv-bg)); }
+  .nv-btn--secondary { background: var(--nv-control); }
+  .nv-btn--danger { background: var(--nv-control); color: var(--nv-danger, var(--nv-ink)); }
+  .nv-btn--ghost:hover:not(:disabled), .nv-btn--icon:hover:not(:disabled) { background: var(--nv-control); }
+  .nv-btn--icon { width: var(--nv-btn-h); padding: 0; flex-shrink: 0; color: var(--nv-muted); }
+  .nv-btn--icon:hover:not(:disabled) { color: var(--nv-ink); }
+  .nv-btn--primary:hover:not(:disabled) { opacity: .9; }
+  .nv-btn svg { display: block; flex: none; }
+  .nv-btn .nv-btn-icon { width: var(--nv-btn-icon); height: var(--nv-btn-icon); }
+  .nv-btn[data-nudge] > svg { translate: var(--nv-btn-nudge, 0) 0; }
+  .nv-btn[data-glyph="play"] svg { translate: 1.5px 0; }
+  .nv-btn-label { min-width: 0; padding-top: 1px; }
+  @supports (text-box: trim-both cap alphabetic) {
+    .nv-btn-label { padding-top: 0; text-box: trim-both cap alphabetic; }
+  }
+}
+/* the selected (inverted) state wins over any variant fill */
+.nv-btn[data-inverted="1"] { background: var(--nv-ink); color: var(--nv-bg); }
+
+/* =====================================================================
+   NOVA GRID — the look of the 3.2 trailer, applied to the app itself.
+   Monochrome, a faint measuring grid, film grain, hairlines and small
+   tracked labels. Hierarchy comes from lines and type, never colour.
+   (No CSS animation or transitions: motion lives in components/motion.)
+   ===================================================================== */
+:root { --nv-rail: 0px; --nv-cell: 64px; }
+@media (min-width: 1024px) { :root { --nv-rail: 88px; } }
+
+/* ---------- texture: grid, registration marks, grain ---------- */
+.nv-texture { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.nv-texture-grid {
+  position: absolute; inset: 0;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256'%3E%3Cpath d='M32 58v12M26 64h12' stroke='white' stroke-opacity='.28' stroke-width='1'/%3E%3C/svg%3E"),
+    linear-gradient(var(--nv-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--nv-grid) 1px, transparent 1px);
+  background-size: 256px 256px, var(--nv-cell) var(--nv-cell), var(--nv-cell) var(--nv-cell);
+  background-position: center 0, center 0, center 0;
+  -webkit-mask-image: radial-gradient(120% 90% at 50% 0%, oklch(0 0 0) 25%, transparent 78%);
+  mask-image: radial-gradient(120% 90% at 50% 0%, oklch(0 0 0) 25%, transparent 78%);
+}
+[data-theme="light"] .nv-texture-grid {
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256'%3E%3Cpath d='M32 58v12M26 64h12' stroke='black' stroke-opacity='.3' stroke-width='1'/%3E%3C/svg%3E"),
+    linear-gradient(var(--nv-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--nv-grid) 1px, transparent 1px);
+}
+.nv-texture-grain {
+  position: absolute; inset: 0; opacity: var(--nv-grain-o);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1.6 -.55'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+}
+[data-theme="light"] .nv-texture-grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1.6 -.55'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.nv-texture-vignette { position: absolute; inset: 0; background: radial-gradient(140% 100% at 50% 0%, transparent 55%, var(--nv-bg) 100%); }
+
+/* ---------- the field: a lamp over the grid (motion/ambient.js) ----------
+   A round window of brighter ruling drifts over the page's own grid; the
+   lines inside it are moved the other way, so they stay exactly over the
+   grid while the light passes across them. Two composited layers moved by
+   transform, nothing repainted per frame. A faint pool of light sits under
+   the lines. Without motion it is parked, still. */
+:root { --nv-lamp: 60vmax; }
+.nv-root { --nv-lamp-line: oklch(1 0 0 / .15); --nv-lamp-pool: oklch(1 0 0 / .05); }
+.nv-root[data-theme="light"] { --nv-lamp-line: oklch(0 0 0 / .12); --nv-lamp-pool: transparent; }
+.nv-texture-lamp {
+  position: absolute; width: var(--nv-lamp); height: var(--nv-lamp);
+  left: calc(50% - var(--nv-lamp) / 2); top: calc(30% - var(--nv-lamp) / 2);
+  overflow: hidden; pointer-events: none; will-change: transform;
+  background: radial-gradient(closest-side, var(--nv-lamp-pool), transparent);
+  -webkit-mask-image: radial-gradient(closest-side, oklch(0 0 0) 0%, oklch(0 0 0 / .5) 45%, transparent 100%);
+  mask-image: radial-gradient(closest-side, oklch(0 0 0) 0%, oklch(0 0 0 / .5) 45%, transparent 100%);
+}
+.nv-texture-lamp-grid {
+  position: absolute; left: 0; top: 0; will-change: transform;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256'%3E%3Cpath d='M32 58v12M26 64h12' stroke='white' stroke-opacity='.75' stroke-width='1'/%3E%3C/svg%3E"),
+    linear-gradient(var(--nv-lamp-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--nv-lamp-line) 1px, transparent 1px);
+  background-size: 256px 256px, var(--nv-cell) var(--nv-cell), var(--nv-cell) var(--nv-cell);
+  background-position: center 0, center 0, center 0;
+}
+[data-theme="light"] .nv-texture-lamp-grid {
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256'%3E%3Cpath d='M32 58v12M26 64h12' stroke='black' stroke-opacity='.6' stroke-width='1'/%3E%3C/svg%3E"),
+    linear-gradient(var(--nv-lamp-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--nv-lamp-line) 1px, transparent 1px);
+}
+/* a registration mark flaring into Nova's star, and the same flare when a
+   message is sent: a four-point star on a hairline cross, in the ink */
+.nv-flare { position: absolute; width: 0; height: 0; pointer-events: none; z-index: 1; color: var(--nv-ink); }
+.nv-flare[data-fixed] { position: fixed; z-index: 80; }
+.nv-flare-star {
+  position: absolute; width: var(--nv-flare-size); height: var(--nv-flare-size);
+  left: calc(var(--nv-flare-size) / -2); top: calc(var(--nv-flare-size) / -2);
+  fill: currentColor; filter: drop-shadow(0 0 5px color-mix(in oklch, currentColor 65%, transparent));
+}
+.nv-flare-h, .nv-flare-v { position: absolute; display: block; }
+.nv-flare-h { left: calc(var(--nv-flare-reach) * -1); width: calc(var(--nv-flare-reach) * 2); top: -.5px; height: 1px; background: linear-gradient(90deg, transparent, currentColor, transparent); }
+.nv-flare-v { top: calc(var(--nv-flare-reach) * -.7); height: calc(var(--nv-flare-reach) * 1.4); left: -.5px; width: 1px; background: linear-gradient(transparent, currentColor, transparent); }
+
+/* ---------- smoked glass (the standard look only) ----------
+   Aero's glass, said in monochrome: what floats over the page (the dock,
+   sheets, menus, settings blocks, the message box) catches the light along
+   its top edge, brightest in the middle, with the faintest sheen falling
+   from it. Background layers only, so the hairline frames stay as they are.
+   In light mode the edge is a crisp darker rule and there is no sheen. */
+:root:not([data-skin]) .nv-root {
+  --nv-edge-light: linear-gradient(90deg, transparent 6%, color-mix(in oklch, var(--nv-ink) 34%, transparent) 50%, transparent 94%);
+  --nv-sheen: linear-gradient(180deg, color-mix(in oklch, var(--nv-ink) 4.5%, transparent), transparent 42%);
+}
+:root:not([data-skin]) .nv-root[data-theme="light"] {
+  --nv-edge-light: linear-gradient(90deg, transparent 6%, color-mix(in oklch, var(--nv-ink) 16%, transparent) 50%, transparent 94%);
+  --nv-sheen: linear-gradient(transparent, transparent);
+}
+:root:not([data-skin]) .nv-root :is(.nv-nav-dock, .nv-sheet, .nv-popup, .nv-block, .nv-composer) {
+  background-image: var(--nv-edge-light), var(--nv-sheen);
+  background-size: 100% 1px, 100% 100%; background-repeat: no-repeat; background-position: top center, top center;
+}
+:root:not([data-skin]) [data-testid="phone"] :is(.nv-block, .nv-popup) { background-image: none; }
+/* the light under the dock's beam falls onto the current tab's pill */
+:root:not([data-skin]) .nv-nav-marker { background: radial-gradient(70% 100% at 50% 0%, color-mix(in oklch, var(--nv-ink) 9%, transparent), transparent), var(--nv-control-base); }
+:root:not([data-skin]) .nv-nav-marker::after { box-shadow: 0 1px 6px color-mix(in oklch, var(--nv-ink) 55%, transparent); }
+/* a light trail drawn along the dock's edge from the old tab to the new
+   one (useNavigationMarker); placed and moved from script */
+.nv-nav-trail { position: absolute; left: 0; top: -7px; width: 0; height: 1.5px; opacity: 0; pointer-events: none; }
+@media (min-width: 1024px) {
+  :root:not([data-skin]) .nv-root .nv-nav-dock { background-image: linear-gradient(180deg, transparent 4%, color-mix(in oklch, var(--nv-ink) 22%, transparent) 50%, transparent 96%); background-size: 1px 100%; background-position: right center; }
+  :root:not([data-skin]) .nv-nav-marker { background: radial-gradient(100% 70% at 0% 50%, color-mix(in oklch, var(--nv-ink) 9%, transparent), transparent), var(--nv-control-base); }
+  .nv-nav-trail { top: 0; left: -11px; width: 1.5px; height: 0; }
+}
+/* the browser's own parts in the palette */
+:root:not([data-skin]) { scrollbar-color: oklch(0.55 0 0 / .45) transparent; }
+:root:not([data-skin]) .nv-root { caret-color: var(--nv-ink); }
+
+/* ---------- type ---------- */
+.nv-label {
+  font-size: 10.5px; line-height: 1; font-weight: 500; letter-spacing: .2em;
+  text-transform: uppercase; color: var(--nv-muted); font-variant-numeric: tabular-nums;
+}
+.nv-label--ink { color: var(--nv-ink); }
+.nv-num { font-variant-numeric: tabular-nums; letter-spacing: .08em; }
+.nv-root .nv-title { font-size: 30px; line-height: 1.05; font-weight: 600; letter-spacing: -.035em; }
+@media (min-width: 1024px) { .nv-root .nv-title { font-size: 40px; } }
+.nv-kicker { display: flex; align-items: center; gap: 12px; }
+.nv-kicker-rule { flex: 1; height: 1px; background: var(--nv-line); transform-origin: 0 50%; }
+.nv-kicker-rule--short { flex: 0 0 40px; }
+
+/* ---------- hairlines ---------- */
+.nv-hair { border: 1px solid var(--nv-line) !important; }
+.nv-hair-b { border-bottom: 1px solid var(--nv-line) !important; }
+.nv-hair-t { border-top: 1px solid var(--nv-line) !important; }
+.nv-rule-h { height: 1px; background: var(--nv-line); transform-origin: 0 50%; }
+.nv-root :where(.nv-glass,.nv-card,.nv-panel:not(.nv-sheet),.nv-block) { border: 1px solid var(--nv-line); border-color: var(--nv-line) !important; }
+.nv-root .nv-glass, .nv-root .nv-surface { border-radius: var(--nv-r-block); }
+[data-theme="dark"] .nv-root .nv-glass, .nv-root[data-theme="dark"] .nv-glass { background: color-mix(in oklch, var(--nv-raised-base) 88%, transparent); }
+.nv-root .nv-card { border-radius: var(--nv-r-card); }
+.nv-glass-hover:hover { background: color-mix(in oklch, var(--nv-ink) 6%, var(--nv-control)); border-color: var(--nv-line-strong) !important; }
+
+/* corner ticks: the registration marks of the trailer's frames */
+.nv-ticks { position: relative; }
+.nv-ticks::before, .nv-ticks::after {
+  content: ""; position: absolute; width: 9px; height: 9px; pointer-events: none; z-index: 2;
+  border-color: var(--nv-line-strong); border-style: solid; border-width: 0;
+}
+.nv-ticks::before { top: -1px; left: -1px; border-top-width: 1px; border-left-width: 1px; }
+.nv-ticks::after { bottom: -1px; right: -1px; border-bottom-width: 1px; border-right-width: 1px; }
+.nv-ticks[data-on="1"]::before, .nv-ticks[data-on="1"]::after, .nv-ticks:hover::before, .nv-ticks:hover::after { border-color: var(--nv-ink); }
+
+/* ---------- Minimal (skins/skins.js): plain black, monochrome, still ----------
+   The standard look without its texture: no grid, registration marks, grain,
+   drifting light or corner ticks, and flat surfaces with no edge light. The
+   page's own motion follows Settings → Look → Motion as usual; the field's
+   lamp and stars only play in the standard look. */
+html[data-skin="minimal"] .nv-texture { display: none; }
+html[data-skin="minimal"] .nv-ticks::before, html[data-skin="minimal"] .nv-ticks::after { content: none; }
+html[data-skin="minimal"] .nv-root { --nv-shadow: none; --nv-lamp-line: transparent; --nv-lamp-pool: transparent; --nv-grain-o: 0; --nv-grid: transparent; }
+
+/* ---------- controls ---------- */
+.nv-root :where(input:not([type=range]):not([type=file]),textarea,select) { background: color-mix(in oklch, var(--nv-ink) 2.5%, transparent); }
+.nv-root :where(input:not([type=range]):not([type=file]),textarea,select):hover { border-color: var(--nv-line-strong) !important; }
+.nv-root :where(input:not([type=range]):not([type=file]),textarea,select):focus { border-color: var(--nv-ink) !important; outline: none; }
+.nv-root ::placeholder { color: var(--nv-faint); }
+.nv-root .nv-btn--secondary { background: transparent; }
+.nv-root .nv-btn--secondary:hover:not(:disabled) { background: var(--nv-control); border-color: var(--nv-line-strong) !important; }
+.nv-root .nv-btn--primary { font-weight: 550; }
+.nv-range::-webkit-slider-runnable-track { height: 1px; background: var(--nv-line-strong); }
+.nv-range::-moz-range-track { height: 1px; background: var(--nv-line-strong); }
+.nv-range::-webkit-slider-thumb { width: 14px; height: 14px; margin-top: -6.5px; border-radius: 3px; }
+.nv-range::-moz-range-thumb { width: 14px; height: 14px; border-radius: 3px; }
+
+/* underline tabs with counts */
+.nv-tabs { position: relative; display: flex; gap: 22px; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--nv-line) !important; }
+.nv-tabs::-webkit-scrollbar { display: none; }
+.nv-tabs > button {
+  position: relative; flex: 0 0 auto; display: inline-flex; align-items: baseline; gap: 6px;
+  padding: 12px 0 13px; border-radius: 0; background: none; white-space: nowrap;
+  font-size: 15px; font-weight: 500; letter-spacing: -.01em; color: var(--nv-muted);
+}
+.nv-tabs > button:hover, .nv-tabs > button[aria-pressed="true"], .nv-tabs > button[aria-selected="true"] { color: var(--nv-ink); }
+.nv-tabs > button .nv-num { font-size: 10px; color: var(--nv-faint); }
+.nv-tabs > button[aria-pressed="true"] .nv-num { color: var(--nv-muted); }
+.nv-tabs-marker { position: absolute; left: 0; bottom: 0; height: 2px; width: 0; background: var(--nv-ink); pointer-events: none; }
+
+/* sheets: a hairline frame and a short handle line */
+.nv-root .nv-sheet { border: 1px solid var(--nv-line) !important; border-bottom: 0 !important; border-radius: var(--nv-r-sheet) var(--nv-r-sheet) 0 0; }
+@media(min-width:640px) { .nv-root .nv-sheet:not([data-full="1"]) { border-bottom: 1px solid var(--nv-line) !important; border-radius: var(--nv-r-sheet); } }
+.nv-sheet-handle { width: 36px; height: 4px; border-radius: 99px; background: var(--nv-line-strong); }
+
+/* blocks: numbered settings sections */
+.nv-block { border-radius: var(--nv-r-block); background: color-mix(in oklch, var(--nv-raised-base) 82%, transparent); }
+.nv-block-head { display: flex; align-items: center; gap: 10px; }
+
+/* ---------- navigation: dock on phones, rail on desktop ---------- */
+.nv-root .nv-nav-dock { --nv-dock-pad: 6px; --nv-dock-r: 26px; border-radius: var(--nv-dock-r); background: color-mix(in oklch, var(--nv-pane-base) 94%, transparent); max-width: 360px; }
+.nv-nav-marker { border-radius: calc(var(--nv-dock-r, 26px) - var(--nv-dock-pad, 6px) - 1px); background: var(--nv-control-base); }
+.nv-nav-marker::after { content: ""; position: absolute; left: 50%; top: -7px; width: 22px; height: 1.5px; margin-left: -11px; background: var(--nv-ink); }
+.nv-nav button { min-height: 54px; gap: 4px; }
+.nv-nav button span { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; font-weight: 500; }
+.nv-nav-badge { position: absolute; top: 10px; right: calc(50% - 16px); width: 6px; height: 6px; border-radius: 50%; background: var(--nv-ink); }
+.nv-rail-brand { display: none; }
+@media (min-width: 1024px) {
+  .nv-nav { inset: 0 auto 0 0; width: var(--nv-rail); padding: 0; }
+  .nv-root .nv-nav-dock {
+    height: 100%; max-width: none; margin: 0; padding: calc(20px + var(--sa-t)) 10px 20px; border-radius: 0;
+    border-width: 0 1px 0 0 !important; display: flex; flex-direction: column; align-items: stretch; gap: 28px;
+    background: color-mix(in oklch, var(--nv-bg) 88%, transparent);
+  }
+  .nv-rail-brand { display: flex; justify-content: center; padding-bottom: 22px; border-bottom: 1px solid var(--nv-line); }
+  .nv-nav-inner { grid-template-columns: 1fr; gap: 6px; }
+  .nv-nav button { min-height: 64px; }
+  .nv-nav-marker::after { left: -11px; top: 50%; width: 1.5px; height: 22px; margin: -11px 0 0; }
+  .nv-page-host { padding-left: calc(var(--nv-rail) + var(--sa-l)); }
+  .nv-top { --nv-rail-offset: var(--nv-rail); }
+}
+
+/* ---------- pages ---------- */
+.nv-page-wrap { margin: 0 auto; padding: 0 16px 9rem; }
+@media (min-width: 640px) { .nv-page-wrap { padding-left: 28px; padding-right: 28px; } }
+@media (min-width: 1024px) { .nv-page-wrap { padding: 0 48px 4rem; } }
+.nv-topbar { padding-top: calc(var(--sa-t) + 18px); margin-bottom: 20px; }
+/* On a wide screen the rail's mark is centred 33px down (20px padding + a
+   26px mark); 12px of padding puts the 42px title row's middle there. */
+@media (min-width: 1024px) { .nv-topbar { padding-top: calc(var(--sa-t) + 12px); margin-bottom: 28px; } }
+.nv-topbar-row { display: flex; align-items: center; gap: 12px; }
+.nv-topbar .nv-mark-mobile { display: inline-flex; }
+@media (min-width: 1024px) { .nv-topbar .nv-mark-mobile { display: none; } }
+
+/* gallery cards */
+.nv-root .nv-card[data-chat-card] { border-radius: var(--nv-r-card); background: var(--nv-raised-base); }
+.nv-card-caption { background: linear-gradient(to top, oklch(0 0 0 / .82), oklch(0 0 0 / .28) 70%, transparent); }
+.nv-card-meta { display: flex; align-items: center; gap: 6px; }
+.nv-root .nv-card-corner { background: oklch(0 0 0 / .42); color: oklch(1 0 0); border: 1px solid oklch(1 0 0 / .16) !important; border-radius: 10px; }
+.nv-root .nv-card-corner:hover:not(:disabled) { background: oklch(0 0 0 / .62); }
+.nv-root [data-chat-card] .nv-btn--sm { --nv-btn-h: 30px; border-radius: 10px; }
+
+/* list rows (chats, personas, lorebooks) */
+.nv-row { position: relative; display: flex; align-items: center; gap: 14px; min-height: 76px; padding: 12px 6px 12px 0; cursor: pointer; }
+
+/* ---------- chat ---------- */
+.nv-chat-head { border-bottom: 1px solid var(--nv-line) !important; }
+.nv-root .nv-chat-root .nv-composer { border-radius: 24px; }
+.nv-msg-label { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; font-weight: 500; }
+/* the thread: a hairline down the side of a reply, with a node at the speaker */
+.nv-thread { position: relative; }
+.nv-root .nv-msg-edit { outline: none; }
+.nv-edit-box { width: 100%; border: 1px solid var(--nv-edge-ink) !important; border-radius: var(--nv-r-card); background: var(--nv-pane-base); }
+.nv-edit-box textarea { display: block; width: 100%; border: 0 !important; background: transparent !important; resize: none; outline: none; padding: 12px 14px; font-size: 15px; line-height: 1.6; min-height: 72px; border-radius: var(--nv-r-card); }
+.nv-edit-bar { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 14px; border-top: 1px solid var(--nv-line) !important; }
+/* Import shows its word only where the row has room */
+.nv-root .nv-import { padding: 0; width: var(--nv-btn-h); }
+.nv-import-label { display: none; }
+@media (min-width: 640px) { .nv-root .nv-import { width: auto; padding: 0 var(--nv-btn-pad); } .nv-import-label { display: inline; } }
+
+/* settings: underline tabs on phones, a numbered index on desktop */
+.nv-root .nv-settings-nav { position: relative; gap: 20px; padding: 0; border-bottom: 1px solid var(--nv-line) !important; }
+.nv-root .nv-settings-nav > button { display: inline-flex; align-items: center; gap: 7px; padding: 10px 0 12px; border-radius: 0; background: none; font-size: 14px; font-weight: 500; color: var(--nv-muted); }
+.nv-root .nv-settings-nav > button[aria-pressed="true"], .nv-root .nv-settings-nav > button:hover { color: var(--nv-ink); }
+.nv-root .nv-settings-nav > button::before { content: attr(data-n); display: none; font-size: 10px; letter-spacing: .08em; color: var(--nv-faint); font-variant-numeric: tabular-nums; }
+.nv-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--nv-ink); flex: none; }
+@media (min-width: 1024px) {
+  .nv-settings-side { position: sticky; top: 24px; }
+  .nv-root .nv-settings-nav { flex-direction: column; gap: 0; overflow: visible; border-bottom: 0 !important; border-left: 1px solid var(--nv-line) !important; }
+  .nv-root .nv-settings-nav > button { justify-content: flex-start; gap: 12px; padding: 0 0 0 18px; min-height: 44px; }
+  .nv-root .nv-settings-nav > button::before { display: inline; }
+  .nv-settings-icon { display: none; }
+  .nv-root .nv-settings-nav > button[aria-pressed="true"] { box-shadow: inset 2px 0 0 var(--nv-ink) !important; margin-left: -1px; padding-left: 19px; }
+  .nv-root .nv-settings-nav > button[aria-pressed="true"]::before { color: var(--nv-ink); }
+  .nv-settings-nav .nv-tabs-marker { display: none; }
+}
+.nv-row-tools { visibility: hidden; }
+.nv-bubble:hover .nv-row-tools, .nv-bubble:focus-within .nv-row-tools { visibility: visible; }
+@media (pointer: coarse) { .nv-row-tools { display: none !important; } .nv-edit-hint { display: none; } }
+.nv-root .nv-row-tools .nv-btn { --nv-btn-h: 26px; }
+.nv-root .nv-msg-head .nv-row-tools button { min-height: 26px; min-width: 26px; }
+
+/* composer: compact hairline chips, never stretched */
+.nv-root .nv-composer-pickers > button { flex: 0 1 auto; border: 1px solid var(--nv-line) !important; background: transparent !important; border-radius: 12px; padding: 0 10px; }
+.nv-root .nv-composer-pickers > button:hover { border-color: var(--nv-line-strong) !important; }
+/* the composer's island: every option as an icon in one hairline pill.
+   Off, an icon is greyed out; on (style, note, Scope, the phone, a picked
+   model) it shines: full ink and a soft glow, never a fill behind it. */
+.nv-composer-island { display: flex; align-items: center; gap: 2px; padding: 3px; flex: 0 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; border-radius: 16px; border: 1px solid var(--nv-line); background: color-mix(in oklab, var(--nv-ink) 3%, transparent); }
+.nv-composer-island::-webkit-scrollbar { display: none; }
+.nv-root .nv-composer-actions .nv-composer-island > .nv-island-btn { flex: 0 0 auto; width: 38px; height: 38px; min-width: 38px; min-height: 38px; padding: 0; border: 0; border-radius: 12px; background: transparent; color: var(--nv-faint); transition: color .22s ease; }
+.nv-root .nv-composer-actions .nv-composer-island > .nv-island-btn > .nv-ico { transition: filter .22s ease; }
+.nv-root .nv-composer-actions .nv-composer-island > .nv-island-btn[data-active="1"] { color: var(--nv-ink); }
+.nv-root .nv-composer-actions .nv-composer-island > .nv-island-btn[data-active="1"] > .nv-ico { filter: drop-shadow(0 0 5px color-mix(in oklab, var(--nv-ink) 60%, transparent)); }
+@media (hover: hover) { .nv-root .nv-composer-actions .nv-composer-island > .nv-island-btn:not([data-active="1"]):hover { color: var(--nv-muted); } }
+.nv-composer-actions { justify-content: space-between; }
+.nv-root .nv-composer-pickers > span { flex: 0 0 auto; }
+.nv-root .nv-composer-tools > button { border-radius: 14px; }
+.nv-root .nv-chat-root .nv-composer { border-radius: 24px; }
+.nv-message-actions .nv-btn--icon { color: var(--nv-muted); }
+.nv-message-actions .nv-btn--icon:hover { color: var(--nv-ink); }
+@media (max-width: 480px) {
+  .nv-root .nv-composer-pickers > button[aria-label="Reply style"] > span:not(.nv-ico) { display: none; }
+  .nv-root .nv-composer-pickers > button[aria-label="Model"] > span { max-width: 110px; }
+}
+
+/* =====================================================================
+   THE PHONE — stays iOS. The grid look above does not reach in here:
+   soft filled cells instead of hairlines, round controls, squircle icons.
+   ===================================================================== */
+[data-testid="phone"] :where(button,input,textarea,select) { border-radius: 14px; }
+[data-testid="phone"] :where(.nv-glass,.nv-card,.nv-block) { border-color: transparent !important; background: oklch(0.227 0.004 286.1); }
+[data-theme="light"] [data-testid="phone"] :where(.nv-glass,.nv-card,.nv-block) { background: oklch(1 0 0); }
+[data-testid="phone"] .nv-btn--secondary { background: var(--nv-control); }
+[data-testid="phone"] .nv-btn--secondary:hover:not(:disabled) { border-color: var(--nv-control-edge) !important; }
+[data-testid="phone"] .nv-range::-webkit-slider-thumb { width: 22px; height: 22px; margin-top: -10.5px; border-radius: 50%; background: oklch(1 0 0); }
+[data-testid="phone"] .nv-range::-webkit-slider-runnable-track { height: 4px; border-radius: 4px; }
+[data-testid="phone"] .nv-label { letter-spacing: .04em; font-size: 12px; text-transform: uppercase; }
+.nv-ios-icon { width: 60px; height: 60px; border-radius: 14px; box-shadow: inset 0 0 0 .5px oklch(1 0 0 / .18) !important; }
+.nv-ios-badge { background: oklch(0.654 0.232 28.7); color: oklch(1 0 0); }
+.nv-ios-dock { border-radius: 30px; background: oklch(0.575 0.012 286 / .18); }
+[data-theme="light"] .nv-ios-dock { background: oklch(0.575 0.012 286 / .14); }
+.nv-ios-close { width: 30px; height: 30px; min-width: 30px !important; min-height: 30px !important; border-radius: 50% !important; background: oklch(0.575 0.012 286 / .28); color: var(--nv-ink); }
+.nv-ios-close:hover { background: oklch(0.575 0.012 286 / .4); }
+@media (min-width: 480px) {
+  .nv-ios-device { border-radius: 54px; border: 11px solid oklch(0.115 0 0) !important; box-shadow: 0 0 0 1.5px oklch(1 0 0 / .14), 0 40px 120px oklch(0 0 0 / .6) !important; }
+  .nv-ios-device > .nv-ios-bar { margin-top: 30px !important; }
+  .nv-ios-island { position: absolute; top: 9px; left: 50%; width: 112px; height: 32px; margin-left: -56px; border-radius: 20px; background: oklch(0 0 0); z-index: 5; pointer-events: none; }
+}
+.nv-ios-island { box-shadow: 0 0 0 1px oklch(1 0 0 / .07) !important; }
+[data-testid="phone"] textarea { scrollbar-width: none; }
+[data-testid="phone"] textarea::-webkit-scrollbar { display: none; }
+
+/* wide screens: settings sections sit two across, a lone panel (Providers,
+   Model) takes the whole width */
+@media (min-width: 1280px) {
+  .nv-settings-stage { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
+  .nv-settings-stage > * { margin: 0 !important; }
+  .nv-settings-stage > :only-child, .nv-settings-stage > .nv-settings-stage { grid-column: 1 / -1; }
+}
+
+/* ---------- launch splash (components/Splash.jsx) ----------
+   Outside .nv-root on purpose: it sits over the app while the app draws,
+   and none of the app's border and motion rules reach it. */
+.nv-splash {
+  position: fixed; inset: 0; z-index: 100000; display: grid; place-items: center;
+  background: oklch(0 0 0); color: oklch(1 0 0); font-family: var(--nv-font);
+  -webkit-font-smoothing: antialiased; overflow: hidden;
+}
+.nv-splash-stage { display: flex; flex-direction: column; align-items: center; will-change: transform, filter; }
+.nv-splash-mark { position: relative; width: 64px; height: 64px; display: grid; place-items: center; }
+.nv-splash-ring {
+  position: absolute; left: 50%; top: 50%; width: 168px; height: 168px; margin: -84px 0 0 -84px;
+  border-radius: 50%; border: 1px solid oklch(1 0 0 / .07); pointer-events: none;
+  opacity: 0; animation: nv-splash-ring 1.4s cubic-bezier(.16,1,.3,1) .05s forwards;
+}
+.nv-splash-ring--outer { width: 280px; height: 280px; margin: -140px 0 0 -140px; border-color: oklch(1 0 0 / .04); animation-delay: .15s; }
+.nv-splash-turn { display: block; width: 100%; height: 100%; opacity: 0; animation: nv-splash-in 1.15s cubic-bezier(.16,1,.3,1) forwards; }
+.nv-splash-logo {
+  display: block; width: 100%; height: 100%; background: oklch(1 0 0);
+  -webkit-mask-size: contain; mask-size: contain; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  -webkit-mask-position: center; mask-position: center;
+}
+/* still loading after the intro: the mark keeps turning, and keeps turning
+   as it leaves rather than snapping back */
+.nv-splash:not([data-phase="intro"]) .nv-splash-logo { animation: nv-splash-spin 2.8s linear infinite; }
+.nv-splash-word {
+  display: flex; margin-top: 22px; font-size: 54px; line-height: 1; font-weight: 700; letter-spacing: -.045em;
+}
+.nv-splash-slot { display: inline-block; overflow: hidden; padding: 0 .02em .08em; margin-bottom: -.08em; }
+.nv-splash-slot > span {
+  display: inline-block; transform: translateY(115%);
+  animation: nv-splash-rise .8s cubic-bezier(.16,1,.3,1) calc(.42s + var(--i) * 70ms) forwards;
+}
+.nv-splash-rule {
+  display: block; width: 180px; height: 1px; margin-top: 18px; background: oklch(1 0 0 / .18);
+  transform: scaleX(0); animation: nv-splash-draw .7s cubic-bezier(.16,1,.3,1) .78s forwards;
+}
+.nv-splash-tag {
+  margin-top: 12px; font-size: 12.5px; letter-spacing: .01em; color: oklch(1 0 0 / .5);
+  opacity: 0; animation: nv-splash-fade .6s ease .95s forwards;
+}
+.nv-splash[data-phase="leave"] { pointer-events: none; animation: nv-splash-fade-out .65s cubic-bezier(.4,0,.2,1) forwards; }
+.nv-splash[data-phase="leave"] .nv-splash-stage { animation: nv-splash-lift .65s cubic-bezier(.4,0,.2,1) forwards; }
+@media (min-width: 1024px) {
+  .nv-splash-mark { width: 76px; height: 76px; }
+  .nv-splash-word { font-size: 68px; }
+}
+
+@keyframes nv-splash-in {
+  from { opacity: 0; transform: scale(.3) rotate(-300deg); filter: blur(6px); }
+  to { opacity: 1; transform: none; filter: none; }
+}
+@keyframes nv-splash-ring { from { opacity: 0; transform: scale(.55); } to { opacity: 1; transform: none; } }
+@keyframes nv-splash-spin { to { transform: rotate(360deg); } }
+@keyframes nv-splash-rise { to { transform: none; } }
+@keyframes nv-splash-draw { to { transform: none; } }
+@keyframes nv-splash-fade { to { opacity: 1; } }
+@keyframes nv-splash-fade-out { to { opacity: 0; } }
+@keyframes nv-splash-lift { to { transform: scale(1.08); filter: blur(10px); } }
+
+/* reduced motion: the finished frame, then a plain fade */
+.nv-splash[data-quiet] *, .nv-splash[data-quiet] .nv-splash-logo { animation: none !important; opacity: 1 !important; transform: none !important; filter: none !important; }
+.nv-splash[data-quiet][data-phase="leave"] { animation: nv-splash-fade-out .25s linear forwards; }
+
+/* ---------- button groups ----------
+   Buttons that belong together sit on one rounded backdrop, its corners
+   concentric with theirs: outer radius = inner radius + padding + edge.
+   Set --nv-group-r to the buttons' radius; the backdrop follows. */
+.nv-group {
+  --nv-group-pad: 4px; --nv-group-r: 10px;
+  padding: var(--nv-group-pad);
+  border-radius: calc(var(--nv-group-r) + var(--nv-group-pad) + 1px);
+  background: var(--nv-control); border: 1px solid var(--nv-line) !important;
+}
+.nv-root .nv-group > :where(button, .nv-btn, [data-group-item]) { border-radius: var(--nv-group-r); }
+.nv-group--pill { --nv-group-r: 999px; }
+
+/* ---------- carousels: fade out at the edges ----------
+   A row that scrolls sideways fades at whichever end has more to show,
+   driven by its own scroll position (no script, nothing per frame). A row
+   that fits, or a browser without scroll timelines, shows no fade. */
+@property --nv-fade-l { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@property --nv-fade-r { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@keyframes nv-fade-x {
+  0% { --nv-fade-l: 0px; --nv-fade-r: 28px; }
+  6%, 94% { --nv-fade-l: 28px; --nv-fade-r: 28px; }
+  100% { --nv-fade-l: 28px; --nv-fade-r: 0px; }
+}
+@supports (animation-timeline: scroll()) {
+  .nv-fade-x, .nv-tabs, .nv-settings-tabs, .nv-composer-pickers, .nv-message-actions {
+    -webkit-mask-image: linear-gradient(to right, transparent, oklch(0 0 0) var(--nv-fade-l), oklch(0 0 0) calc(100% - var(--nv-fade-r)), transparent);
+    mask-image: linear-gradient(to right, transparent, oklch(0 0 0) var(--nv-fade-l), oklch(0 0 0) calc(100% - var(--nv-fade-r)), transparent);
+    animation: nv-fade-x linear both; animation-timeline: scroll(self inline);
+  }
+}
+
+/* a destructive action at the foot of a menu: big, red, unmistakable */
+.nv-root .nv-danger-btn { background: var(--nv-danger); color: var(--nv-on-danger); border: 0; }
+.nv-root .nv-danger-btn :where(p, span, svg) { color: inherit; }
+.nv-root .nv-danger-btn--soft { background: color-mix(in oklab, var(--nv-danger) 16%, transparent); color: var(--nv-danger); box-shadow: inset 0 0 0 1.5px var(--nv-danger); }
+@media (hover: hover) { .nv-root .nv-danger-btn:hover { filter: brightness(1.08); } }
+
+/* chat bubbles, chosen in Settings → Appearance (data-bubbles on .nv-root):
+   "full" lets a bubble run the whole width of the chat, which suits a phone;
+   "aligned" keeps each side to its own edge, like a messaging app. Either
+   way a bubble is only as wide as its text: a short reply, or the thinking
+   dots, stay small, and only text that fills a line takes the width. The
+   same choice shapes the phone's message threads. */
+.nv-root[data-bubbles="full"] .nv-chat-messages .nv-bubble-box { max-width: 100%; }
+.nv-root[data-bubbles="aligned"] .nv-chat-messages .nv-bubble-box { max-width: min(84%, 680px); }
+.nv-root[data-bubbles="full"] .nv-dm-bubble { max-width: 100%; }
+/* a tab that scrolls and one that does not keep the same width on desktop
+   (a classic scrollbar used to shift the page and the dock 15px between
+   them); overlay scrollbars on phones take no room either way */
+:root:not([data-skin]) { scrollbar-gutter: stable; }

@@ -1,0 +1,15 @@
+{
+  "appId": "com.nova.roleplay",
+  "appName": "Nova",
+  "webDir": "dist",
+  "android": {
+    "path": "mobile/android",
+    "backgroundColor": "#000000",
+    "allowMixedContent": true
+  },
+  "plugins": {
+    "Keyboard": {
+      "resize": "none"
+    }
+  }
+}

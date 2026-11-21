@@ -1,0 +1,372 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { GeminiWebError, GeminiWebSession, cookieHeader, modelHeaders, parseCookieInput } from "../bridge/gemini-web.mjs";
+
+/* The bridge reads its sign-ins at import: an empty home and a throwaway store. */
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "nova-gemini-test-"));
+process.env.NOVA_BRIDGE_KEY = "test-bridge-key";
+process.env.NOVA_BRIDGE_HOME = TMP;
+process.env.NOVA_BRIDGE_AUTH_FILE = path.join(TMP, "auth.json");
+/* a test must never read or open a real browser */
+process.env.NOVA_BRIDGE_GEMINI_BROWSER = "none";
+fs.writeFileSync(process.env.NOVA_BRIDGE_AUTH_FILE, "{}");
+const { server, bridgeInfo, bridgeSetBrowserSignIn, bridgeSetGeminiTransport, bridgeSignOut } = await import("../bridge/bridge.mjs");
+
+/* ---------- a fake gemini.google.com ---------- */
+
+const frame = (inner) => JSON.stringify([["wrb.fr", null, JSON.stringify(inner)]]);
+const snap = (text, thoughts) => frame([null, ["c_1", "r_1"], null, null, [["rc_1", [text], ...Array(35).fill(null), ...(thoughts ? [[[thoughts]]] : [])]]]);
+const wire = (...frames) => `)]}'\n\n${frames.map((f) => `${f.length}\n${f}\n`).join("")}`;
+/* a snapshot that also names the model that answered (inner[42]) */
+const snapAs = (text, model) => frame([null, ["c_1", "r_1"], null, null, [["rc_1", [text]]], ...Array(37).fill(null), model]);
+const errorFrame = (code) => JSON.stringify([["wrb.fr", null, null, null, null, [3, null, [[code]]]]]);
+const PAGE = `<html>${"x".repeat(2500)} "SNlM0e":"page-token" "cfb2h":"boq_build" "FdrFJe":"-123456" </html>`;
+
+function fakeGoogle() {
+  const g = {
+    log: [],
+    page: { status: 200, headers: {}, body: PAGE },
+    stream: () => ({ status: 200, headers: {}, body: wire(snap("Hel"), snap("Hello there")) }),
+    rotate: () => ({ status: 200, headers: { "set-cookie": ["__Secure-1PSIDTS=rotated; Path=/; Secure; HttpOnly"] }, body: "" }),
+  };
+  g.request = async (o) => {
+    g.log.push(o);
+    const u = new URL(o.url);
+    if (u.pathname.endsWith("/app")) return g.page;
+    if (u.pathname === "/RotateCookies") return g.rotate(o);
+    if (u.pathname.endsWith("/StreamGenerate")) {
+      const r = g.stream(o);
+      if (r.status < 400) {
+        /* arrive in two pieces, as a real stream would */
+        const half = Math.floor(r.body.length / 2);
+        o.onChunk?.(r.body.slice(0, half));
+        o.onChunk?.(r.body.slice(half));
+      }
+      return r;
+    }
+    return { status: 404, headers: {}, body: "" };
+  };
+  return g;
+}
+
+const COOKIES = { "__Secure-1PSID": "psid-value", "__Secure-1PSIDTS": "psidts-value" };
+
+describe("Gemini app client (gemini-web.mjs)", () => {
+  describe("parseCookieInput", () => {
+    it("reads a whole Cookie header", () => {
+      expect(parseCookieInput("Cookie: __Secure-1PSID=a; __Secure-1PSIDTS=b; NID=c").cookies).toEqual({ "__Secure-1PSID": "a", "__Secure-1PSIDTS": "b", NID: "c" });
+    });
+    it("reads DevTools rows", () => {
+      expect(parseCookieInput("__Secure-1PSID\tg.a000abc\t.google.com\n__Secure-1PSIDTS\tsidts-1\t.google.com").cookies).toEqual({ "__Secure-1PSID": "g.a000abc", "__Secure-1PSIDTS": "sidts-1" });
+    });
+    it("reads a JSON export", () => {
+      expect(parseCookieInput(JSON.stringify([{ name: "__Secure-1PSID", value: "a", domain: ".google.com" }, { name: "SID", value: "s" }])).cookies).toEqual({ "__Secure-1PSID": "a", SID: "s" });
+      expect(parseCookieInput('{"__Secure-1PSID":"a"}').cookies).toEqual({ "__Secure-1PSID": "a" });
+    });
+    it("reads the two bare values and an account number", () => {
+      expect(parseCookieInput("g.a000abcdefghijklmnop\nsidts-xyz-abcdefghijklmnop")).toEqual({ cookies: { "__Secure-1PSID": "g.a000abcdefghijklmnop", "__Secure-1PSIDTS": "sidts-xyz-abcdefghijklmnop" }, authuser: 0 });
+      expect(parseCookieInput("__Secure-1PSID=a; authuser=2")).toEqual({ cookies: { "__Secure-1PSID": "a" }, authuser: 2 });
+    });
+    it("finds nothing in nothing", () => {
+      expect(parseCookieInput("").cookies).toEqual({});
+    });
+  });
+
+  it("names the model with a header, or none for the default", () => {
+    expect(modelHeaders("")).toEqual({});
+    expect(modelHeaders("95a4c0abcba24364")).toEqual({ "x-goog-ext-525001261-jspb": '[1,null,null,null,"95a4c0abcba24364",null,null,0,[4]]' });
+    expect(modelHeaders("[1,null,null,null,\"zz\"]")["x-goog-ext-525001261-jspb"]).toBe('[1,null,null,null,"zz"]');
+  });
+
+  it("needs the __Secure-1PSID cookie", () => {
+    expect(() => new GeminiWebSession({ cookies: { NID: "x" } })).toThrow(GeminiWebError);
+  });
+
+  describe("session", () => {
+    it("takes the page token, build label and session id from the app page", async () => {
+      const g = fakeGoogle();
+      const s = new GeminiWebSession({ cookies: COOKIES, request: g.request });
+      await s.init();
+      expect(s).toMatchObject({ at: "page-token", bl: "boq_build", sid: "-123456", ready: true });
+      expect(g.log[0].url).toBe("https://gemini.google.com/app");
+      expect(g.log[0].headers.Cookie).toBe(cookieHeader(COOKIES));
+    });
+
+    it("uses /u/N for another account", async () => {
+      const g = fakeGoogle();
+      await new GeminiWebSession({ cookies: COOKIES, authuser: 2, request: g.request }).init();
+      expect(g.log[0].url).toBe("https://gemini.google.com/u/2/app");
+    });
+
+    it("knows an expired sign-in by the redirect or the missing token", async () => {
+      const g = fakeGoogle();
+      g.page = { status: 302, headers: { location: "https://accounts.google.com/ServiceLogin?x=1" }, body: "" };
+      await expect(new GeminiWebSession({ cookies: COOKIES, request: g.request }).init()).rejects.toMatchObject({ status: 401 });
+      g.page = { status: 200, headers: {}, body: "<html>sign in</html>" };
+      await expect(new GeminiWebSession({ cookies: COOKIES, request: g.request }).init()).rejects.toMatchObject({ status: 401 });
+      g.page = { status: 200, headers: {}, body: `<html>${"x".repeat(3000)}</html>` };
+      await expect(new GeminiWebSession({ cookies: COOKIES, request: g.request }).init()).rejects.toMatchObject({ status: 502 });
+    });
+
+    it("merges every cookie Google hands back and reports the set", async () => {
+      const g = fakeGoogle();
+      const seen = [];
+      const s = new GeminiWebSession({ cookies: COOKIES, request: g.request, onCookies: (c) => seen.push(c) });
+      expect(await s.rotate()).toBe(true);
+      expect(s.cookies).toEqual({ ...COOKIES, "__Secure-1PSIDTS": "rotated" });
+      expect(seen).toHaveLength(1);
+      g.rotate = () => ({ status: 200, headers: {}, body: "" });
+      expect(await s.rotate()).toBe(false);
+      g.rotate = () => ({ status: 401, headers: {}, body: "" });
+      await expect(s.rotate()).rejects.toMatchObject({ status: 401 });
+    });
+
+    it("streams growing snapshots and sends the prompt, token and model header", async () => {
+      const g = fakeGoogle();
+      const s = new GeminiWebSession({ cookies: COOKIES, request: g.request });
+      const snaps = [];
+      const r = await s.stream({ prompt: "PROMPT TEXT", header: "abc123abc123", onSnapshot: (p) => snaps.push(p.text) });
+      expect(r).toMatchObject({ text: "Hello there", cid: "c_1" });
+      expect(snaps.at(-1)).toBe("Hello there");
+      const post = g.log.find((o) => o.method === "POST");
+      const form = new URLSearchParams(post.body);
+      expect(form.get("at")).toBe("page-token");
+      expect(JSON.parse(JSON.parse(form.get("f.req"))[1])[0][0]).toBe("PROMPT TEXT");
+      expect(post.headers["x-goog-ext-525001261-jspb"]).toContain("abc123abc123");
+      expect(post.url).toContain("f.sid=-123456");
+      expect(post.url).toContain("bl=boq_build");
+    });
+
+    it("gets a fresh page token and tries once more when nothing was shown yet", async () => {
+      const g = fakeGoogle();
+      let tries = 0;
+      const good = g.stream;
+      g.stream = (o) => (++tries === 1 ? { status: 400, headers: {}, body: "bad token" } : good(o));
+      const s = new GeminiWebSession({ cookies: COOKIES, request: g.request });
+      expect((await s.stream({ prompt: "hi" })).text).toBe("Hello there");
+      expect(tries).toBe(2);
+      expect(g.log.filter((o) => o.url.endsWith("/app")).length).toBe(2);
+    });
+
+    it("does not retry once text has appeared, or on a quota answer", async () => {
+      const g = fakeGoogle();
+      g.stream = () => ({ status: 429, headers: {}, body: "" });
+      await expect(new GeminiWebSession({ cookies: COOKIES, request: g.request }).stream({ prompt: "hi" })).rejects.toMatchObject({ status: 429 });
+      expect(g.log.filter((o) => o.method === "POST" && o.url.includes("StreamGenerate")).length).toBe(1);
+    });
+
+    it("turns an error code inside a 200 answer into an error", async () => {
+      const g = fakeGoogle();
+      g.stream = () => ({ status: 200, headers: {}, body: wire(errorFrame(1037)) });
+      await expect(new GeminiWebSession({ cookies: COOKIES, request: g.request }).stream({ prompt: "hi" })).rejects.toMatchObject({ status: 429, code: 1037 });
+    });
+  });
+});
+
+/* ---------- the bridge, against the fake ---------- */
+
+describe("Gemini app in Nova Bridge", () => {
+  let base;
+  let g;
+  const AUTH = { Authorization: "Bearer test-bridge-key" };
+  const post = (route, body, headers = AUTH) => fetch(`${base}${route}`, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
+  const chat = (body) => post("/v1/chat/completions", body);
+  const health = async () => (await fetch(`${base}/health`, { headers: AUTH })).json();
+  const messages = [{ role: "system", content: "You are Mira." }, { role: "user", content: "Who are you?" }];
+
+  beforeAll(async () => {
+    await new Promise((r) => server.listen(0, "127.0.0.1", r));
+    base = `http://127.0.0.1:${server.address().port}`;
+    g = fakeGoogle();
+    bridgeSetGeminiTransport(g.request);
+  });
+  afterAll(async () => {
+    bridgeSignOut("gemini-web");
+    bridgeSetGeminiTransport(null);
+    await new Promise((r) => server.close(r));
+  });
+
+  it("will not sign in without the cookies, nor with ones Google refuses", async () => {
+    let r = await post("/auth/gemini-web/token", { token: "just some words" });
+    expect(r.status).toBe(400);
+    g.page = { status: 302, headers: { location: "https://accounts.google.com/x" }, body: "" };
+    r = await post("/auth/gemini-web/token", { token: "__Secure-1PSID=bad" });
+    expect(r.status).toBe(401);
+    g.page = { status: 200, headers: {}, body: PAGE };
+    expect((await health()).providers["gemini-web"].connected).toBe(false);
+  });
+
+  it("refuses the browser sign-in when there is no login window", async () => {
+    const r = await post("/auth/gemini-web/start", {});
+    expect(r.status).toBe(400);
+    expect((await r.json()).error.message).toMatch(/paste your gemini\.google\.com cookies/);
+  });
+
+  it("treats Connect pressed twice as one sign-in, and tells the window when the cookies are refused", async () => {
+    let opened = 0;
+    let finish;
+    const prompt = "Finish signing in in Firefox, then select Sign in again.";
+    bridgeSetBrowserSignIn(() => {
+      if (++opened === 1) return { retryMessage: prompt };
+      return new Promise((r) => { finish = r; });
+    });
+    await post("/auth/gemini-web/start", {});
+    expect(bridgeInfo().subscriptions.find((p) => p.id === "gemini-web").flow?.message).toBe(prompt);
+    await post("/auth/gemini-web/start", {});
+    const again = await (await post("/auth/gemini-web/start", {})).json();
+    expect(again.status).toBe("pending");
+    expect(opened).toBe(2);
+    expect(bridgeInfo().subscriptions.find((p) => p.id === "gemini-web").flow).toMatchObject({ status: "pending", message: expect.stringMatching(/Google sign-in/) });
+    g.page = { status: 302, headers: { location: "https://accounts.google.com/x" }, body: "" };
+    finish({ cookies: { "__Secure-1PSID": "refused" }, authuser: 0 });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(bridgeInfo().subscriptions.find((p) => p.id === "gemini-web").flow).toMatchObject({ status: "error", message: expect.stringMatching(/expired/) });
+    g.page = { status: 200, headers: {}, body: PAGE };
+    bridgeSetBrowserSignIn(null);
+  });
+
+  it("signs in with pasted cookies and never shows them", async () => {
+    const r = await post("/auth/gemini-web/token", { token: "__Secure-1PSID=secret-psid-value; __Secure-1PSIDTS=secret-psidts-value" });
+    expect(r.status).toBe(200);
+    const h = await health();
+    expect(h.providers["gemini-web"]).toMatchObject({ connected: true, source: "manual", problem: null });
+    expect(JSON.stringify(h)).not.toMatch(/secret-psid|page-token/);
+    expect(fs.readFileSync(process.env.NOVA_BRIDGE_AUTH_FILE, "utf8")).toContain("secret-psid-value");
+    expect(fs.statSync(process.env.NOVA_BRIDGE_AUTH_FILE).mode & 0o077).toBe(0);
+  });
+
+  it("lists the default model and the known ones", async () => {
+    const d = await (await fetch(`${base}/v1/models`, { headers: AUTH })).json();
+    const ids = d.data.map((m) => m.id);
+    expect(ids).toEqual(expect.arrayContaining(["gemini-web/default", "gemini-web/gemini-4-argon"]));
+    expect(d.data.find((m) => m.id === "gemini-web/default")).toMatchObject({ name: "Account default (Gemini app)", pricing: { prompt: "0", completion: "0" } });
+  });
+
+  it("streams a reply, framing the system prompt in text and naming the model by header", async () => {
+    g.log.length = 0;
+    const r = await chat({ model: "gemini-web/gemini-4-argon", stream: true, messages });
+    expect(r.status).toBe(200);
+    const text = await r.text();
+    const deltas = [...text.matchAll(/"content":"([^"]*)"/g)].map((m) => m[1]);
+    expect(deltas.join("")).toBe("Hello there");
+    expect(text).toMatch(/"finish_reason":"stop"/);
+    expect(text).toMatch(/"usage":\{"prompt_tokens":\d+,"completion_tokens":3/);
+    expect(text.trim().endsWith("data: [DONE]")).toBe(true);
+    const post = g.log.find((o) => o.method === "POST" && o.url.includes("StreamGenerate"));
+    const prompt = JSON.parse(JSON.parse(new URLSearchParams(post.body).get("f.req"))[1])[0][0];
+    expect(prompt).toContain("<instructions>\nYou are Mira.\n</instructions>");
+    expect(prompt).toContain("<user>\nWho are you?\n</user>");
+    expect(post.headers["x-goog-ext-525001261-jspb"]).toContain("95a4c0abcba24364");
+  });
+
+  it("sends no model header for the account default, and answers without streaming", async () => {
+    g.log.length = 0;
+    const r = await chat({ model: "gemini-web/default", messages });
+    const d = await r.json();
+    expect(d).toMatchObject({ object: "chat.completion", provider: "gemini-web", choices: [{ message: { content: "Hello there" }, finish_reason: "stop" }] });
+    const post = g.log.find((o) => o.method === "POST" && o.url.includes("StreamGenerate"));
+    expect(post.headers["x-goog-ext-525001261-jspb"]).toBeUndefined();
+  });
+
+  it("sends a bare Argon id to the Gemini app, and shows thoughts as reasoning", async () => {
+    g.stream = () => ({ status: 200, headers: {}, body: wire(snap("Hi", "let me think"), snap("Hi there", "let me think")) });
+    const d = await (await chat({ model: "gemini-4-argon", messages })).json();
+    expect(d).toMatchObject({ provider: "gemini-web", choices: [{ message: { content: "Hi there", reasoning: "let me think" } }] });
+  });
+
+  it("warns when the app answers with another model than the one asked for", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      g.stream = () => ({ status: 200, headers: {}, body: wire(snapAs("Hi", "4 Argon")) });
+      expect((await chat({ model: "gemini-web/gemini-4-argon", messages })).status).toBe(200);
+      expect(warn).not.toHaveBeenCalledWith(expect.stringMatching(/Gemini app answered with/));
+      g.stream = () => ({ status: 200, headers: {}, body: wire(snapAs("Hi", "3.5 Flash-Lite")) });
+      expect((await chat({ model: "gemini-web/gemini-4-argon", messages })).status).toBe(200);
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/asked for gemini-4-argon but the Gemini app answered with "3\.5 Flash-Lite"/));
+      warn.mockClear();
+      expect((await chat({ model: "gemini-web/default", messages })).status).toBe(200);
+      expect(warn).not.toHaveBeenCalledWith(expect.stringMatching(/Gemini app answered with/));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("makes a refusal Google puts inside a 200 answer a real HTTP error", async () => {
+    g.stream = () => ({ status: 200, headers: {}, body: wire(errorFrame(1037)) });
+    const r = await chat({ model: "gemini-web/default", stream: true, messages });
+    expect(r.status).toBe(429);
+    expect((await r.json()).error.message).toMatch(/usage limit/);
+  });
+
+  it("stops offering a model Google refuses, until it is learned again", async () => {
+    g.stream = () => ({ status: 200, headers: {}, body: wire(errorFrame(1052)) });
+    expect((await chat({ model: "gemini-web/gemini-4-argon", messages })).status).toBe(404);
+    const ids = (await (await fetch(`${base}/v1/models`, { headers: AUTH })).json()).data.map((m) => m.id);
+    expect(ids).not.toContain("gemini-web/gemini-4-argon");
+    expect(ids).toContain("gemini-web/default");
+    g.stream = () => ({ status: 200, headers: {}, body: wire(snap("Back", ""))});
+    const learned = await post("/auth/gemini-web/models", { slug: "gemini-4-argon", name: "Gemini 4 Argon", header: "feedfacefeedface" });
+    expect(learned.status).toBe(200);
+    g.log.length = 0;
+    expect((await (await chat({ model: "gemini-web/gemini-4-argon", messages })).json()).choices[0].message.content).toBe("Back");
+    const used = g.log.find((o) => o.method === "POST" && o.url.includes("StreamGenerate"));
+    expect(used.headers["x-goog-ext-525001261-jspb"]).toContain("feedfacefeedface");
+  });
+
+  it("learns and forgets models, checking what it is given", async () => {
+    expect((await post("/auth/gemini-web/models", { slug: "x y", header: "feedfacefeedface" })).status).toBe(400);
+    expect((await post("/auth/gemini-web/models", { slug: "gemini-4-flash", header: "not a header" })).status).toBe(400);
+    expect((await post("/auth/gemini-web/models", { slug: "default", header: "feedfacefeedface" })).status).toBe(400);
+    const ok = await (await post("/auth/gemini-web/models", { slug: "gemini-4-flash", name: "Gemini 4 Flash", header: "0123456789abcdef" })).json();
+    expect(ok.models.map((m) => m.id)).toContain("gemini-web/gemini-4-flash");
+    const gone = await (await post("/auth/gemini-web/models", { remove: "gemini-4-flash" })).json();
+    expect(gone.models.map((m) => m.id)).not.toContain("gemini-web/gemini-4-flash");
+    expect((await chat({ model: "gemini-web/gemini-4-flash", messages })).status).toBe(404);
+  });
+
+  it("keeps the rotated cookie in the store", async () => {
+    await post("/auth/gemini-web/token", { token: "__Secure-1PSID=secret-psid-value" });
+    g.stream = () => ({ status: 200, headers: { "set-cookie": ["__Secure-1PSIDTS=fresh-from-stream; Path=/"] }, body: wire(snap("ok", "")) });
+    await chat({ model: "gemini-web/default", messages });
+    expect(fs.readFileSync(process.env.NOVA_BRIDGE_AUTH_FILE, "utf8")).toContain("fresh-from-stream");
+  });
+
+  it("says the sign-in expired, and shows it on /health", async () => {
+    g.stream = () => ({ status: 401, headers: {}, body: "" });
+    g.page = { status: 302, headers: { location: "https://accounts.google.com/ServiceLogin" }, body: "" };
+    const r = await chat({ model: "gemini-web/default", messages });
+    expect(r.status).toBe(401);
+    expect((await r.json()).error.message).toMatch(/expired/);
+    expect((await health()).providers["gemini-web"].problem).toMatch(/expired/);
+    g.page = { status: 200, headers: {}, body: PAGE };
+  });
+
+  it("counts the day's prompts for the Usage tab, and notes a limit being hit", async () => {
+    await post("/auth/gemini-web/token", { token: "__Secure-1PSID=secret-psid-value" });
+    const usage = async () => (await (await fetch(`${base}/v1/usage`, { headers: AUTH })).json()).providers["gemini-web"];
+    const before = (await usage()).requests;
+    g.stream = () => ({ status: 200, headers: {}, body: wire(snap("Hello there", "")) });
+    await chat({ model: "gemini-web/default", messages });
+    await chat({ model: "gemini-web/gemini-4-argon", messages });
+    const u = await usage();
+    expect(u).toMatchObject({ kind: "counted", requests: before + 2 });
+    expect(u.byModel).toMatchObject({ default: expect.any(Number), "gemini-4-argon": expect.any(Number) });
+    expect(u.tokensOut).toBeGreaterThan(0);
+    expect(Date.parse(u.resetsAt)).toBeGreaterThan(Date.now());
+    expect(Date.parse(u.resetsAt) - Date.now()).toBeLessThanOrEqual(86400000);
+    g.stream = () => ({ status: 200, headers: {}, body: wire(errorFrame(1037)) });
+    await chat({ model: "gemini-web/default", messages });
+    expect((await usage()).limitHitAt).toMatch(/^20\d\d-/); /* also set by the earlier quota test in this file: only checked that it is recorded */
+    expect((await usage()).requests).toBe(before + 2);
+    g.stream = () => ({ status: 200, headers: {}, body: wire(snap("Hello there", "")) });
+  });
+
+  it("signs out", async () => {
+    expect((await post("/auth/gemini-web/logout", {})).status).toBe(200);
+    expect((await health()).providers["gemini-web"].connected).toBe(false);
+    const r = await chat({ model: "gemini-web/default", messages });
+    expect(r.status).toBe(401);
+  });
+});

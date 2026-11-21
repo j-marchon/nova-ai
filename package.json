@@ -1,0 +1,49 @@
+{
+  "name": "nova",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build && node scripts/prepare-web.mjs",
+    "preview": "vite preview --host",
+    "test": "vitest run",
+    "test:layout": "node tests/uiScale.electron.cjs",
+    "test:bridge-ui": "node tests/bridgeUi.electron.cjs",
+    "test:bridge-host": "node tests/bridgeHost.electron.cjs",
+    "desktop": "electron desktop/main.cjs",
+    "build:desktop": "npm run build && node desktop/build-desktop.mjs"
+  },
+  "dependencies": {
+    "@astryxdesign/core": "^0.7.16",
+    "@astryxdesign/theme-neutral": "^0.7.16",
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/cli": "^8.4.2",
+    "@capacitor/core": "^8.4.2",
+    "@capacitor/filesystem": "^8.1.3",
+    "@capacitor/keyboard": "^8.0.5",
+    "@capacitor/share": "^8.0.2",
+    "@stylexjs/stylex": "^0.19.2",
+    "dompurify": "^3.4.17",
+    "fflate": "^0.8.2",
+    "gsap": "^3.15.0",
+    "lucide-react": "^1.66.0",
+    "mediabunny": "1.61.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@astryxdesign/cli": "^0.7.16",
+    "@tailwindcss/vite": "^4.0.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "babel-plugin-react-compiler": "^1.0.0",
+    "electron": "43.8.11",
+    "electron-builder": "^26.18.0",
+    "fake-indexeddb": "^6.2.5",
+    "jsdom": "^29.1.1",
+    "tailwindcss": "^4.0.0",
+    "vite": "^5.4.0",
+    "vitest": "^3.2.7"
+  }
+}
