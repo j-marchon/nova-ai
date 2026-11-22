@@ -46,8 +46,8 @@ export const isBuiltInSkin = (id) => !!builtIn(id);
 /* Skins sold separately to supporters. They are listed whether or not they
    are on this device, so everyone can see them; one that is not added yet
    shows as locked until its file is added. */
-/* where supporters get them (Ko-fi, Patreon); empty shows no link */
-export const SUPPORT_URL = "";
+/* where supporters get them: the Ko-fi page */
+export const SUPPORT_URL = "https://ko-fi.com/bjmar";
 export const SUPPORTER_SKINS = [
   { id: "aero", name: "Aero", note: "Supporter skin", swatch: "linear-gradient(180deg, oklch(0.83 0.08 235), oklch(0.97 0.02 215) 58%, oklch(0.84 0.09 225))", locked: true },
 ];
