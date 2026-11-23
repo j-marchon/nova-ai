@@ -49,7 +49,7 @@ export const SUBSCRIPTION_PROVIDERS = [
     id: "gemini-web",
     name: "Gemini app",
     studentOffer: "Google AI Pro, trials included · uses gemini.google.com",
-    description: "Uses your gemini.google.com session for chat only, so models a trial blocks elsewhere (Gemini 4 Argon) work. Models come from the Gemini app; learn new ones in the Bridge window.",
+    description: "Uses your gemini.google.com session for chat only, so models a trial blocks elsewhere can work. The models are the ones the Gemini app's own picker offers your account.",
     auth: "browser",
     tokenHint: "Or paste your gemini.google.com cookies (__Secure-1PSID …)",
   },

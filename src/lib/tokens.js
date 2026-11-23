@@ -61,6 +61,20 @@ export function formatTokenUsage(totalTokens, maxTokens) {
 
 export const formatTokenBreakdown = formatTokenUsage;
 
+/* What a reply style adds to every request, in tokens: its system text (an
+   imported preset's own blocks, in its layout, when it has one), its
+   post-history block and its in-chat blocks. Impersonate and Continue text
+   goes only with those requests and is not counted. */
+export function styleTokens(style) {
+  if (!style) return 0;
+  const sys = Array.isArray(style.layout)
+    ? style.layout.filter((x) => !x.marker).map((x) => x.text || "").join("\n\n")
+    : style.text || "";
+  const inject = Array.isArray(style.inject) ? style.inject : [];
+  return estimateTokens(sys.trim()) + estimateTokens(String(style.post || "").trim())
+    + inject.reduce((n, b) => n + estimateTokens(String(b?.text || "").trim()), 0);
+}
+
 export function calculateSystemTokens({
   character,
   universe,

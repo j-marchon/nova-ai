@@ -97,11 +97,11 @@ afterEach(() => {
 });
 
 describe("phone button", () => {
-  it("sits in the composer toolbar with the author's note and model buttons, with a count of what is new", async () => {
+  it("sits in the composer toolbar with the quick tweaks and model buttons, with a count of what is new", async () => {
     await mount();
     const row = q(".nv-composer-actions");
     expect(row.querySelector('[aria-label="Open phone"]')).toBeTruthy();
-    expect(row.querySelector('[aria-label^="Author\'s note"]')).toBeTruthy();
+    expect(row.querySelector('[aria-label^="Quick tweaks"]')).toBeTruthy();
     expect(row.querySelector('[aria-label="Model"]')).toBeTruthy();
     /* new feed posts light nothing: the one unread DM */
     expect(row.querySelector('[data-testid="phone-badge"]').textContent).toBe("1");
@@ -196,35 +196,36 @@ describe("the phone", () => {
     expect(q('[data-testid="phone-refresh"]').getAttribute("aria-label")).toBe("Refresh, 1 hour later");
   });
 
-  it("Settings shows the phone's usage, without a cost while nothing is priced", async () => {
+  it("Settings shows the phone's token use as one sum, in and out, with the next requests below and no price", async () => {
     const d = seed();
-    d.chats[0].handset.usage = { calls: 3, tokensIn: 48200, tokensOut: 9100, cost: 0, est: 1, byMode: {} };
+    d.chats[0].handset.usage = { calls: 3, tokensIn: 48200, tokensOut: 9100, cost: 0.03, est: 1, byMode: {} };
     await mount(d);
     await openPhone();
     await click(q('[data-testid="phone-settings"]'));
     const box = q('[data-testid="phone-usage"]');
-    expect(box.textContent).toContain("Usage (estimated)");
+    expect(box.textContent).toContain("Tokens");
     const total = q('[data-testid="phone-usage-total"]').textContent;
-    expect(total).toContain("3 requests · 48.2k in · 9.1k out");
-    expect(total).toContain("(some estimated)");
-    expect(total).not.toContain("$");
-    /* one row per kind of request, from the real prompts; no price known, no cost */
+    expect(total).toContain("57.3k");
+    expect(total).toContain("48.2k in · 9.1k out · 3 requests");
+    expect(total).toContain("some counted from the text");
+    /* one row per kind of request, from the real prompts */
     const rows = [...document.querySelectorAll("[data-estimate]")];
     expect(rows.map((r) => r.dataset.estimate)).toEqual(["setup", "sync", "refresh", "more", "respond", "replies"]);
     expect(rows[0].textContent).toMatch(/^Set up~[\d.]+k? in · ≤[\d.]+k? out$/);
     expect(box.textContent).not.toContain("$");
-    expect(box.textContent).toContain("Estimates. Actual use depends on the model.");
   });
 
-  it("Settings shows the cost once the provider reported one", async () => {
-    const d = seed();
-    d.chats[0].handset.usage = { calls: 2, tokensIn: 2000, tokensOut: 500, cost: 0.03, est: 0, byMode: {} };
-    await mount(d);
+  it("Settings lets you write more about the persona", async () => {
+    await mount();
     await openPhone();
     await click(q('[data-testid="phone-settings"]'));
-    const total = q('[data-testid="phone-usage-total"]').textContent;
-    expect(total).toContain("$0.03");
-    expect(total).not.toContain("estimated)");
+    const job = byLabel("Job");
+    await act(async () => job.focus());
+    await type(job, "Lighthouse keeper");
+    await act(async () => job.blur());
+    await flush();
+    expect(chat().handset.me.traits.job).toBe("Lighthouse keeper");
+    expect(chat().handset.me.traitsFrom.job).toBe("manual");
   });
 
   it("Murmur: visible posts in feed order, a deleted anchor hides one, posting and liking are local", async () => {

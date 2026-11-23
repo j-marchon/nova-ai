@@ -14,7 +14,7 @@
    starts at login with --hidden, hosting with no window; opening Nova
    Bridge from the menu then shows the window of the one already running. */
 
-const { app, BrowserWindow, Menu, ipcMain, shell, nativeTheme } = require("electron");
+const { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, shell, nativeTheme } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const { randomBytes } = require("node:crypto");
@@ -106,6 +106,40 @@ function createBridgeHost({
     return startsAtLogin();
   }
 
+  /* ---------- keep running in the tray ----------
+     On by default: closing the window hides it, the Bridge goes on hosting
+     and an icon in the system tray (the status area on Linux) brings it
+     back. Off: closing the window asks, then stops, as it always did. */
+  const TRAY_FILE = path.join(HOME, "tray.json");
+  const trayWanted = () => {
+    try { return JSON.parse(fs.readFileSync(TRAY_FILE, "utf8")).tray !== false; } catch { return true; }
+  };
+  let tray = null;
+  function setTray(on) {
+    try { fs.mkdirSync(HOME, { recursive: true }); fs.writeFileSync(TRAY_FILE, JSON.stringify({ tray: !!on })); } catch {}
+    syncTray();
+    return trayWanted();
+  }
+  function syncTray() {
+    if (trayWanted()) {
+      if (tray && !tray.isDestroyed()) return;
+      try {
+        const img = nativeImage.createFromPath(icon || "").resize({ width: 22, height: 22 });
+        tray = new Tray(img);
+        tray.setToolTip("Nova Bridge");
+        tray.setContextMenu(Menu.buildFromTemplate([
+          { label: "Open Nova Bridge", click: () => show() },
+          { type: "separator" },
+          { label: "Quit and stop the Bridge", click: async () => { forceQuit = true; await stop(); app.quit(); } },
+        ]));
+        tray.on("click", () => show());
+      } catch (e) { tray = null; }
+    } else if (tray) {
+      tray.destroy();
+      tray = null;
+    }
+  }
+
   let bridge = null;
   let win = null;
   let wanted = false;      /* the user wants it running: the watchdog restarts it if it drops */
@@ -161,6 +195,7 @@ function createBridgeHost({
 
   handle("info", () => snapshot());
   handle("autostart", (on) => (typeof on === "boolean" ? setStartsAtLogin(on) : startsAtLogin()));
+  handle("tray", (on) => (typeof on === "boolean" ? setTray(on) : trayWanted()));
   handle("start", async () => { await start(); return snapshot(); });
   handle("stop", async () => { await stop(); return snapshot(); });
   handle("signin", async (id) => {
@@ -213,6 +248,8 @@ function createBridgeHost({
 
     win.on("close", (e) => {
       if (forceQuit) return;
+      /* in the tray: the window goes, the Bridge stays */
+      if (trayWanted() && tray && !tray.isDestroyed()) { e.preventDefault(); win.hide(); return; }
       /* closing while hosting: ask first */
       if (!bridge?.bridgeInfo().running) return;
       e.preventDefault();
@@ -223,6 +260,8 @@ function createBridgeHost({
   /* quitting from the taskbar or the system goes through the same question */
   app.on("before-quit", (e) => {
     if (forceQuit || !bridge?.bridgeInfo().running) return;
+    /* a system quit (log out, shut down) while it lives in the tray just stops it */
+    if (trayWanted() && tray && !tray.isDestroyed() && !win?.isVisible()) { forceQuit = true; return; }
     e.preventDefault();
     if (win) { win.show(); win.focus(); win.close(); }
   });
@@ -255,10 +294,12 @@ function createBridgeHost({
     /* open the window and start hosting; at login (--hidden), host
        without showing the window until it is asked for */
     async ready({ hidden = false } = {}) {
+      syncTray();
       createWindow({ show: !hidden });
       await start();
     },
     show,
+    keepsRunning: () => trayWanted() && !!tray && !tray.isDestroyed(),
   };
 }
 
@@ -273,7 +314,7 @@ function runBridgeApp({ bridgeFile, icon }) {
   const host = createBridgeHost({ bridgeFile, icon });
   app.on("second-instance", () => host.show());
   app.whenReady().then(() => host.ready({ hidden: process.argv.includes("--hidden") }));
-  app.on("window-all-closed", () => app.quit());
+  app.on("window-all-closed", () => { if (!host.keepsRunning()) app.quit(); });
 }
 
 module.exports = { createBridgeHost, runBridgeApp };

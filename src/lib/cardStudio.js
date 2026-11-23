@@ -1,13 +1,5 @@
-/* ---------- Card Studio engine ----------
-
-   Pure pieces of the AI card writer: the card shapes, the detail levels, the
-   prompt builders, the reader that coerces a model's object into a card, and
-   the write itself (`writeCard`), which is given its transport so it can run
-   inside an activity job or a test alike. The UI is components/AiFill.jsx.
-
-   The prompt wording lives in the small *Section functions below so it can be
-   rewritten without touching the plumbing. */
-
+/* Card Studio uses the selected writing prompt with the schema of the open form. */
+import { DESCRIPTION, PERSONALITY, dialogueText, profileText, strings } from "./characterTemplate.js";
 import { ModelJsonError, parseModelJson, repairJsonRequest, stripThinking } from "./json.js";
 
 /* ---------- card shapes ----------
@@ -35,12 +27,16 @@ export const AI_SCHEMAS = {
     fields: [
       { key: "name", label: "Name", required: true, about: "the character's name." },
       { key: "tagline", label: "Tagline", required: true, about: "one line that captures who they are." },
-      { key: "description", label: "Description", long: true, required: true,
-        about: "appearance, voice, personality under pressure, history, desires, flaws and concrete habits; include the details the material invites (age, look, relationships, secrets)." },
+      { key: "description", label: "Description", sections: DESCRIPTION, required: true, about: "the character's profile" },
+      { key: "personality", label: "Personality", sections: PERSONALITY, required: true, about: "what drives this person" },
+      { key: "scenario", label: "Scenario", required: true, about: "the situation and relationship at the start of play" },
       { key: "greetings", label: "Openings", list: GREETING_ITEM, required: true,
-        about: "distinct situations that can open a chat. Each item has a short \"label\" and the scene \"text\", written in the character's voice with *asterisks* around actions. Never name or describe the user." },
-      { key: "exampleDialogs", label: "Example dialogue", long: true, required: true,
-        about: "short exchanges that show their voice in different situations, one line per turn, using the literal placeholders {{user}}: and {{char}}: at the start of each line, separated by \\n." },
+        about: "the first message, then any alternate openings, each with a label and scene text" },
+      { key: "exampleDialogs", label: "Example dialogue", entries: true, required: true, about: "one sample of the character's speech per entry" },
+      { key: "creatorNotes", label: "Creator notes", about: "optional notes for the player" },
+      { key: "systemPrompt", label: "System prompt", about: "card-specific instructions only if requested" },
+      { key: "postHistoryInstructions", label: "Post-history instructions", about: "instructions after chat history only if requested" },
+      { key: "tags", label: "Tags", entries: true, about: "short searchable tags" },
     ],
   },
   universes: {
@@ -64,244 +60,80 @@ export const AI_SCHEMAS = {
   },
 };
 
-/* The old "suggested shape" strings, derived, for anything still reading them. */
-const skeleton = (fields) => "{" + fields.map((f) => `"${f.key}": ${f.list ? `[${skeleton(f.list)}]` : '"..."'}`).join(", ") + "}";
-for (const schema of Object.values(AI_SCHEMAS)) schema.shape = skeleton(schema.fields);
-
 export const fieldOf = (schema, key) => schema?.fields.find((f) => f.key === key) || null;
 const schemaOf = (s) => (typeof s === "string" ? AI_SCHEMAS[s] : s);
-
-/* kept for older callers: the studio has no parameters any more */
-export function paramLines() { return []; }
-
-/* ---------- detail levels ----------
-
-   `tokens` is the card's output budget before any thinking allowance;
-   `planTokens` is added when the plan is written inline (no reasoning
-   channel). `effort` is the reasoning effort asked of providers that take
-   one. `targets` are rendered into the prompt, per kind and field; the brief
-   always overrides them. */
-export const DETAIL_LEVELS = {
-  low: {
-    id: "low", label: "Low", tokens: 3000, planTokens: 800, effort: "low",
-    summary: "a compact card that is quick to read and still fully playable",
-    targets: {
-      personas: { description: "one tight paragraph, roughly 100–180 words" },
-      characters: { tagline: "under 12 words", description: "roughly 150–250 words", greetings: "1 opening, roughly 60–120 words", exampleDialogs: "1–2 short exchanges" },
-      universes: { tagline: "under 12 words", story: "roughly 120–200 words", rules: "roughly 60–120 words", greetings: "1 opening", characters: "2–3 characters, a few sentences each", locations: "2–3 places, a few sentences each" },
-    },
-  },
-  medium: {
-    id: "medium", label: "Medium", tokens: 8000, planTokens: 1500, effort: "medium",
-    summary: "a full card with room for texture and specific detail",
-    targets: {
-      personas: { description: "roughly 250–400 words, in a few paragraphs" },
-      characters: { tagline: "under 15 words", description: "roughly 400–700 words, in several paragraphs", greetings: "2–3 openings in clearly different situations, roughly 100–200 words each", exampleDialogs: "3–4 exchanges in different situations" },
-      universes: { tagline: "under 15 words", story: "roughly 300–500 words", rules: "roughly 150–300 words", greetings: "2–3 openings in different places or moments", characters: "4–6 characters with full descriptions", locations: "3–5 places" },
-    },
-  },
-  high: {
-    id: "high", label: "High", tokens: 16000, planTokens: 2500, effort: "high",
-    summary: "a rich, deep card: layered history, relationships and many hooks for scenes",
-    targets: {
-      personas: { description: "roughly 500–800 words, in several paragraphs" },
-      characters: { tagline: "under 15 words", description: "roughly 800–1200 words, in several paragraphs", greetings: "4–5 openings in clearly different situations, roughly 150–250 words each", exampleDialogs: "5–6 exchanges in different situations and moods" },
-      universes: { tagline: "under 15 words", story: "roughly 600–1000 words", rules: "roughly 300–500 words", greetings: "4–5 openings in different places or moments", characters: "7–10 characters with full descriptions", locations: "6–8 places" },
-    },
-  },
-};
-export const DETAIL_IDS = ["low", "medium", "high"];
-export const detailOf = (id) => DETAIL_LEVELS[id] || DETAIL_LEVELS.medium;
-
-/* What the transport is asked for at this level. */
-export function requestOptions(detail, thinking) {
-  const level = detailOf(detail);
-  return { maxTokens: level.tokens + (thinking ? 0 : level.planTokens), effort: level.effort };
-}
-
-/* ---------- prompt sections ---------- */
-
-const keyList = (fields) => fields.map((f) => `"${f.key}"`).join(", ");
-
-function fieldContract(f) {
-  const need = f.required ? "required" : "optional";
-  if (f.list) {
-    const item = "{" + f.list.map((s) => `"${s.key}": string`).join(", ") + "}";
-    return `- "${f.key}": array of objects (${need}, at least one item), each ${item}${f.extras ? ", plus optional extra string keys" : ""}. It holds ${f.about}`;
-  }
-  return `- "${f.key}": string (${need}, non-empty). It holds ${f.about}`;
-}
-
-const JSON_RULES =
-  "JSON rules: double quotes around every key and every string; inside a string escape a double quote as \\\" and a backslash as \\\\, " +
-  "and write a line break as \\n (never a raw line break inside a string); no trailing commas, no comments, no code fences, no null values.";
-
-/* How each kind of card is used once it is saved. A model writes a better
-   card when it knows who reads it and for what. */
-const USE = {
-  personas:
-    "A persona is the person the user plays. During a chat its description is given to the AI model that plays everyone else, so that model knows who it is talking to: what they look like, how they come across, what they have been through.",
-  characters:
-    "During a chat, the description and example dialogue are handed to another AI model as everything it knows about this character, and it plays them from that alone. An opening is the first message the user sees when a chat starts. " +
-    "So the description has to give a performer what they need: how this person looks, talks, wants, hides and behaves when pushed, in specifics. The example dialogue has to sound like this character and nobody else.",
-  universes:
-    "During a chat, the story, rules, places and characters are handed to another AI model as everything it knows about this world, and it plays the world, its narration and every character in it from that alone. An opening is the first message the user sees when a chat starts. " +
-    "So the card has to give a narrator what they need: what is going on, what can and cannot happen, where things are, and who lives there with their own aims.",
-};
-
-function jobSection(schema) {
-  return `You are writing a ${schema.label} card for Nova, a roleplay chat app. The user describes what they want in a brief, and you turn that brief into the finished card. ` +
-    "The app loads your answer straight into the card's fields, with no editing in between, so what you return is what gets used.\n\n" +
-    `How the card is used: ${USE[schema.kind]}`;
-}
-
-function contractSection(schema, fields = schema.fields) {
-  return `Output contract. Reply with exactly one JSON object with exactly these keys: ${keyList(fields)}. No other keys at the top level. Types and contents:\n` +
-    fields.map(fieldContract).join("\n") + "\n" + JSON_RULES;
-}
-
-function briefSection() {
-  return "The brief decides. Read it closely before anything else, and again if it is long. " +
-    "Whatever it states is fixed: names, ages, looks, history, relationships, personality, tone, setting, how many of something, how long, which language, what to avoid. " +
-    "All of it goes into the card as stated. Do not swap a stated detail for a more common one, tone anything down, merge things the brief keeps apart, or leave something out because it is awkward to place. " +
-    "If the brief describes someone or something unusual, write exactly that, not the nearest familiar type.\n\n" +
-    "Where the brief says nothing, the choice is yours, and it should be a specific one that fits what the brief does say: a particular job, city, habit, grudge or way of speaking, never a placeholder. " +
-    "A short brief is an invitation to invent. A long brief is a specification to follow.\n\n" +
-    "A count or a length given in the brief overrides the detail targets below. If the brief asks for something no field is meant for, work it into the field where it fits best.";
-}
-
-function planSection(thinking, scope = "card") {
-  const steps =
-    "1. Go through the brief and list every requirement it states, one per line, in its own words. Include the small ones.\n" +
-    `2. List what the brief leaves open that the ${scope} needs, and decide each one.\n` +
-    `3. Decide what goes in each field of the ${scope}, and note which requirements from step 1 it carries. Every requirement must land somewhere.\n` +
-    `4. Write the ${scope}.\n` +
-    "5. Check what you wrote against the list from step 1, line by line, and fix anything missing, changed or contradicted before you answer.";
-  const why = `Work it out before you write. A ${scope} written straight off drifts from the brief and falls back on stock traits, so plan first.`;
-  return thinking
-    ? `${why} Do this in your reasoning, before any output:\n${steps}\n` +
-      "If you cannot reason privately before answering, put steps 1 to 3 inside <plan>…</plan> at the start of your reply, in plain prose with no curly braces, and write the JSON right after it. The app removes the plan."
-    : `${why} Start your reply with a <plan>…</plan> block that does steps 1 to 3 in plain prose (no curly braces, no JSON), then write the JSON object right after it:\n${steps}\n` +
-      "The app removes the plan. Nothing else may come before or after the JSON.";
-}
-
-function detailSection(schema, detail, fields = schema.fields) {
-  const level = detailOf(detail);
-  const targets = level.targets[schema.kind] || {};
-  const lines = fields.filter((f) => targets[f.key]).map((f) => `- ${f.key}: ${targets[f.key]}`);
-  return `Detail level: ${level.label}, ${level.summary}.` +
-    (lines.length ? ` Targets, used where the brief does not say:\n${lines.join("\n")}` : "");
-}
-
-/* What makes the writing good, limited to the fields being written. */
-function styleSection(schema, fields = schema.fields) {
-  const has = (key) => fields.some((f) => f.key === key);
-  const lines = [
-    "Show people through what they do, say and notice. \"Checks the exits before she sits down\" gives a performer more than \"cautious\".",
-    "Give people contradictions, limits and wants of their own. Someone with only strengths, or a single mood, leaves nothing to play.",
-  ];
-  if (has("greetings")) {
-    lines.push("An opening starts in the middle of a situation, in a particular place, gives the user something to respond to, and stops where a reply comes naturally. " +
-      "It never speaks, acts, thinks or decides for the user and never names or describes them; refer to the user only as {{user}}, if at all.");
-  }
-  if (has("exampleDialogs")) lines.push("Example dialogue carries the voice: this character's rhythm, vocabulary and evasions, different from how anyone else would say it.");
-  if (has("characters")) lines.push("The inhabitants of a world want different things, and some of those wants collide. Give each a reason to act when the user is not looking.");
-  if (has("rules")) lines.push("World rules say what things cost and what is forbidden, not only what is possible.");
-  lines.push(
-    "Keep every name, fact, date and the tone the same across all fields.",
-    "Write in English unless the brief asks for another language.",
-    "Nothing in the card mentions cards, prompts, AI or these instructions.",
-  );
-  return "Writing it well:\n" + lines.map((l) => `- ${l}`).join("\n");
-}
+const bundled = import.meta.glob("../prompts/card-studio/*.txt", { eager: true, query: "?raw", import: "default" });
+export const STUDIO_PROMPTS = Object.fromEntries(Object.entries(bundled).map(([path, text]) =>
+  [path.split("/").pop().slice(0, -4), text.trim()]));
+export const DEFAULT_STUDIO_PROMPT = STUDIO_PROMPTS.default;
 
 const clean = (brief) => String(brief || "").replace(/<\/?brief>/gi, "").trim();
 const blocks = (...parts) => parts.filter(Boolean).join("\n\n");
 
-function reminder(fields, thinking, label) {
-  return `Reply with ${thinking ? "" : "your <plan> block, then "}the one JSON object for this ${label} with exactly the keys ${keyList(fields)}, and nothing else.`;
+function fieldShape(field) {
+  if (field.sections) return Object.fromEntries(field.sections.map((f) => [f.key, f.entry ? [f.label] : f.label]));
+  if (field.list) return [Object.fromEntries(field.list.map((f) => [f.key, "text"]))];
+  return field.entries ? ["text"] : "text";
 }
 
-/* ---------- prompts: the whole card ---------- */
-
-export function cardSystem(schema, { detail = "medium", thinking = true } = {}) {
-  schema = schemaOf(schema);
-  return blocks(jobSection(schema), briefSection(), planSection(thinking), styleSection(schema), detailSection(schema, detail), contractSection(schema));
-}
-
-/* `current` is what the form already holds: the brief then says what to change. */
-export function cardUser(schema, brief, { current = null, thinking = true } = {}) {
-  schema = schemaOf(schema);
-  const b = clean(brief);
-  if (current) {
-    return blocks(
-      `The user already has this ${schema.label}:\n<current_card>\n${JSON.stringify(current, null, 2)}\n</current_card>`,
-      `Rewrite the whole card. The brief says what to change; keep every name, fact and detail it does not change, and make the writing fuller and more specific.`,
-      `<brief>\n${b || "(No changes requested: keep who they are and everything established, and make the card stronger.)"}\n</brief>`,
-      reminder(schema.fields, thinking, schema.label),
-    );
-  }
-  return blocks(`<brief>\n${b}\n</brief>`, reminder(schema.fields, thinking, schema.label));
-}
-
-/* ---------- prompts: one part ---------- */
-
-export function partSystem(schema, field, { detail = "medium", thinking = true } = {}) {
-  schema = schemaOf(schema);
-  field = typeof field === "string" ? fieldOf(schema, field) : field;
+function systemFor(fields, task, { prompt, interview } = {}) {
+  const shape = Object.fromEntries(fields.map((f) => [f.key, fieldShape(f)]));
   return blocks(
-    `You are rewriting one part, "${field.key}", of a ${schema.label} card for Nova, a roleplay chat app. The app puts your answer in place of the old part with no editing in between. ` +
-      "The new part must fit the rest of the card exactly: same names, facts, tone and setting.\n\n" +
-      `How the card is used: ${USE[schema.kind]}`,
-    "The user's note (in the brief) decides. Everything it asks for goes into the new part as stated, with nothing toned down or left out. Where the note says nothing, keep the facts of the old part and of the rest of the card.",
-    planSection(thinking, "part"),
-    styleSection(schema, [field]),
-    detailSection(schema, detail, [field]),
-    contractSection(schema, [field]),
+    prompt?.trim() || DEFAULT_STUDIO_PROMPT,
+    task,
+    `Output contract. Return one JSON object in this shape:\n${JSON.stringify(shape, null, 2)}`,
+    fields.map((f) => `${f.key}: ${f.about}${f.extras ? " Additional string fields are welcome on each item." : ""}`).join("\n"),
+    interview
+      ? 'If a choice in the brief genuinely needs the author, you may instead return {"questions":["an open question"]}. Ask up to three in one round. Otherwise return the finished work now.'
+      : "Return the finished work now. Resolve open details from the brief without asking questions.",
   );
 }
 
-export function partUser(schema, field, note, { current = null, thinking = true } = {}) {
+export function cardSystem(schema, options) {
+  schema = schemaOf(schema);
+  return systemFor(schema.fields, `Write a ${schema.label} card for Nova.`, options);
+}
+
+export function cardUser(schema, brief, { current = null } = {}) {
+  return blocks(
+    current && `Revise this ${schemaOf(schema).label} card. Keep established details unless the brief changes them.\n<current_card>\n${JSON.stringify(current, null, 2)}\n</current_card>`,
+    `<brief>\n${clean(brief)}\n</brief>`,
+  );
+}
+
+export function partSystem(schema, field, options) {
   schema = schemaOf(schema);
   field = typeof field === "string" ? fieldOf(schema, field) : field;
+  return systemFor([field], `You are rewriting one part of a ${schema.label} card. Keep it consistent with the other fields.`, options);
+}
+
+export function partUser(schema, field, note, { current = null } = {}) {
+  field = typeof field === "string" ? fieldOf(schemaOf(schema), field) : field;
   const { [field.key]: old, ...rest } = current || {};
-  const n = clean(note);
   return blocks(
     `The rest of the card:\n${JSON.stringify(rest, null, 2)}`,
-    `The current "${field.key}":\n${JSON.stringify(old ?? (field.list ? [] : ""), null, 2)}`,
-    `<brief>\n${n || "(No note: make it stronger and more specific, keeping its facts.)"}\n</brief>`,
-    reminder([field], thinking, `"${field.key}" part`),
+    `The current "${field.key}":\n${JSON.stringify(old ?? "", null, 2)}`,
+    `<brief>\n${clean(note)}\n</brief>`,
   );
 }
 
-/* ---------- prompts: the one follow-up for missing fields ---------- */
-
-export function missingSystem(schema, keys, { detail = "medium" } = {}) {
-  schema = schemaOf(schema);
-  const fields = keys.map((k) => fieldOf(schema, k)).filter(Boolean);
-  return blocks(
-    `You are finishing a ${schema.label} card for Nova, a roleplay chat app. Some required fields are missing. Write only those, consistent with the rest of the card and with the brief.`,
-    briefSection(),
-    styleSection(schema, fields),
-    detailSection(schema, detail, fields),
-    contractSection(schema, fields),
-    "Reply with the JSON object only.",
-  );
+function missingSystem(schema, keys, options) {
+  return systemFor(keys.map((k) => fieldOf(schema, k)),
+    `You are finishing a ${schema.label} card. Fill the missing fields using the brief and the card so far.`, options);
 }
 
-export function missingUser(schema, card, keys, brief) {
-  schema = schemaOf(schema);
-  return blocks(
-    `The card so far:\n<card>\n${JSON.stringify(card, null, 2)}\n</card>`,
-    `<brief>\n${clean(brief) || "(none)"}\n</brief>`,
-    `Write the missing keys: ${keys.map((k) => `"${k}"`).join(", ")}. Reply with one JSON object holding only those keys.`,
-  );
+function missingUser(card, keys, brief) {
+  return blocks(`The card so far:\n${JSON.stringify(card, null, 2)}`,
+    `<brief>\n${clean(brief)}\n</brief>`, `Write the missing keys: ${keys.map((k) => JSON.stringify(k)).join(", ")}.`);
 }
 
 /* ---------- reading the model's object ---------- */
 
 const ALIASES = {
   greetings: ["alternate_greetings", "alternateGreetings", "openings"],
+  creatorNotes: ["creator_notes"],
+  systemPrompt: ["system_prompt"],
+  postHistoryInstructions: ["post_history_instructions"],
   exampleDialogs: ["example_dialogs", "exampleDialogues", "mes_example", "examples"],
   locations: ["places"],
 };
@@ -338,31 +170,43 @@ function coerceItem(field, item) {
 
 function coerceValue(field, v) {
   if (v === undefined || v === null) return undefined;
+  if (field.sections) return profileText(field.sections, v).trim() || undefined;
+  if (field.key === "exampleDialogs") return dialogueText(v).trim();
+  if (field.entries) return Array.isArray(v) ? strings(v) : undefined;
   if (!field.list) return coerceString(v);
   const rows = Array.isArray(v) ? v : typeof v === "object" || typeof v === "string" ? [v] : [];
   return rows.map((item) => coerceItem(field, item)).filter(Boolean);
 }
 
+function cardSource(kind, out) {
+  if (kind === "characters" && /^chara_card_v[23]$/.test(out?.spec) && out.data && typeof out.data === "object") return out.data;
+  return out;
+}
+
 const rawOf = (src, key) => {
   if (src[key] !== undefined) return src[key];
+  if (key === "greetings" && typeof src.first_mes === "string") {
+    return [src.first_mes, ...(Array.isArray(src.alternate_greetings) ? src.alternate_greetings : [])];
+  }
   for (const alias of ALIASES[key] || []) if (src[alias] !== undefined) return src[alias];
   return undefined;
 };
 
-const empty = (field, v) => (field.list ? !Array.isArray(v) || !v.length : !v);
+const empty = (v) => v == null || v.length === 0;
 
 export function missingFields(kind, card) {
-  return AI_SCHEMAS[kind].fields.filter((f) => f.required && empty(f, card?.[f.key])).map((f) => f.key);
+  return AI_SCHEMAS[kind].fields.filter((f) => f.required && empty(card?.[f.key])).map((f) => f.key);
 }
 
 /* { card, missing }: only sane types, trimmed, and the required keys that are missing or empty */
 export function coerceCard(kind, out) {
   const schema = AI_SCHEMAS[kind];
+  out = cardSource(kind, out);
   const src = out && typeof out === "object" && !Array.isArray(out) ? out : {};
   const card = {};
   for (const f of schema.fields) {
     const v = coerceValue(f, rawOf(src, f.key));
-    if (v !== undefined) card[f.key] = v;
+    if (v !== undefined && !(f.required && empty(v))) card[f.key] = v;
   }
   return { card, missing: missingFields(kind, card) };
 }
@@ -370,23 +214,23 @@ export function coerceCard(kind, out) {
 /* { value, missing }: one part, from {key: …}, a bare array for a list, or a whole card */
 export function coercePart(kind, key, out) {
   const field = fieldOf(AI_SCHEMAS[kind], key);
-  const raw = Array.isArray(out) && field.list ? out : out && typeof out === "object" ? rawOf(out, key) : undefined;
+  out = cardSource(kind, out);
+  const raw = Array.isArray(out) && (field.list || field.entries) ? out : out && typeof out === "object" ? rawOf(out, key) : undefined;
   const value = coerceValue(field, raw);
-  return { value, missing: value === undefined || empty(field, value) };
+  return { value, missing: value === undefined || (field.required && empty(value)) };
 }
 
 /* The form's values for a whole card: every AI field present, empty when the model gave nothing. */
 export function fullCard(kind, card) {
-  return Object.fromEntries(AI_SCHEMAS[kind].fields.map((f) => [f.key, card?.[f.key] ?? (f.list ? [] : "")]));
+  return Object.fromEntries(AI_SCHEMAS[kind].fields.map((f) => [f.key, card?.[f.key] ?? (f.list || f.key === "tags" ? [] : "")]));
 }
 
 /* ---------- the write ----------
 
    `ask(system, user)` is the transport: it resolves to the parsed object
    (with a non-enumerable `truncated` flag) or throws a ModelJsonError, as
-   completeJson does. Resolves to { card, missing } for a whole card, or
-   { part, value } for one part. */
-export async function writeCard({ kind, brief = "", current = null, part = null, detail = "medium", thinking = true, ask, onPhase, signal }) {
+   completeJson does. Returns questions, a card with its missing fields, or one rewritten part. */
+export async function writeCard({ kind, brief = "", current = null, part = null, prompt, interview = false, clarifications, ask, onPhase, signal }) {
   const schema = AI_SCHEMAS[kind];
   const field = part ? fieldOf(schema, part) : null;
   if (part && !field) throw new Error("Unknown part.");
@@ -425,28 +269,35 @@ export async function writeCard({ kind, brief = "", current = null, part = null,
     return out;
   };
 
+  const options = { prompt, interview: interview && !clarifications };
+  const context = { current };
+  const answers = clarifications && `Interview answers (unanswered choices are yours):\n${JSON.stringify(clarifications)}`;
+  const user = field ? partUser(schema, field, brief, context) : cardUser(schema, brief, context);
+  const out = await askJson(field ? partSystem(schema, field, options) : cardSystem(schema, options),
+    blocks(user, answers), !!(field?.list || field?.entries));
+  const questions = strings(out?.questions).slice(0, 3);
+  if (options.interview && questions.length && !schema.fields.some((f) => rawOf(out, f.key) !== undefined)) return { questions };
   if (field) {
-    const out = await askJson(partSystem(schema, field, { detail, thinking }), partUser(schema, field, brief, { current, thinking }), !!field.list);
     const { value, missing } = coercePart(kind, field.key, out);
     if (missing) throw new Error("The model did not return that part. Try again.");
     return { part: field.key, value };
   }
 
-  const out = await askJson(cardSystem(schema, { detail, thinking }), cardUser(schema, brief, { current, thinking }), false);
   let { card, missing } = coerceCard(kind, out);
   if (missing.length) {
     /* one targeted follow-up for what is missing, never more */
     onPhase?.("Filling in missing parts…");
     try {
-      const more = await askJson(missingSystem(schema, missing, { detail }), missingUser(schema, card, missing, brief), false);
+      const more = await askJson(missingSystem(schema, missing, { prompt }), blocks(missingUser({ ...current, ...card }, missing, brief), answers), false);
       const extra = coerceCard(kind, more).card;
-      for (const key of missing) if (!empty(fieldOf(schema, key), extra[key])) card = { ...card, [key]: extra[key] };
+      for (const key of missing) if (!empty(extra[key])) card = { ...card, [key]: extra[key] };
     } catch (e) {
       if (e?.name === "AbortError") throw e;
       /* the card in hand is still worth keeping */
     }
     missing = missingFields(kind, card);
   }
+  if (!Object.keys(card).length) throw new Error("The model returned no card fields. Try again.");
   return { card, missing };
 }
 
@@ -461,5 +312,5 @@ export const cardJobOf = (j, kind, itemId) => j.owner?.cardKind === kind && (j.o
 export function resultFill(kind, result) {
   if (result?.studio && result.part) return { part: result.part, values: { [result.part]: result.value } };
   const card = result?.studio ? result.card : coerceCard(kind, result).card;
-  return { part: null, values: fullCard(kind, card) };
+  return { part: null, values: kind === "characters" ? card : fullCard(kind, card) };
 }

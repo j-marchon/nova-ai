@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { displayHtml, displaySource } from "../src/lib/html.js";
+import { displayHtml, displaySource, scopeCss } from "../src/lib/html.js";
 import { tavernRegex } from "../src/lib/tavern.js";
 
 const rules = tavernRegex([
@@ -36,15 +36,35 @@ describe("display regex", () => {
     expect(displaySource("X<!-- END -->", anchored, "assistant", 0)).toBe("Y");
   });
 
-  it("sanitises: no scripts, handlers, network loads, classes or positioning", () => {
+  it("keeps a preset's own styles, classes and icons, fenced in", () => {
+    const html = displayHtml(
+      "<style>.chip{color:red;position:fixed}.chip:hover .tip{display:block;position:absolute;z-index:9999}body{display:none}@import url(https://x.example/a.css);</style>" +
+      "<span class='chip' id='a'>hi<svg width='10' height='10' viewBox='0 0 24 24'><path d='M9 6l6 6'/></svg><span class='tip'>t</span></span>",
+      rules, "assistant", 0,
+    );
+    expect(html).toContain("<style>.nv-pv .pv-chip{color:red}.nv-pv .pv-chip:hover .pv-tip{display:block;position:absolute;z-index:20}</style>");
+    expect(html).toContain('class="pv-chip"');
+    expect(html).toContain('id="pv-a"');
+    expect(html).toContain("<svg");
+    expect(html).not.toMatch(/body|@import|fixed/);
+  });
+
+  it("limits what a scoped stylesheet can reach", () => {
+    expect(scopeCss("@media (max-width:600px){.a{top:0}}@keyframes k{from{opacity:0}to{opacity:1}}@font-face{src:url(x)}")).toBe("@media (max-width:600px){.nv-pv .pv-a{top:0}}@keyframes k{from{opacity:0}to{opacity:1}}");
+    expect(scopeCss("html{color:red}:root{--x:1}.a,.b{color:blue}")).toBe(".nv-pv .pv-a,.nv-pv .pv-b{color:blue}");
+    expect(scopeCss('.a{background:url("https://x")}')).toBe("");
+  });
+
+  it("sanitises: no scripts, handlers, network loads or positioning that escapes the bubble", () => {
     const html = displayHtml(
       '<img src="https://t.example/p.gif"><script>alert(1)</script><b onclick="x()" class="fixed inset-0" id="a">ok</b>' +
       '<a href="javascript:alert(1)">l</a><a href="https://example.com">m</a><style>body{display:none}</style>' +
       '<div style="background:url(https://t.example/a.png);color:red">c</div><iframe src="https://x"></iframe>BOND: 7',
       rules, "assistant", 0,
     );
-    expect(html).not.toMatch(/<img|<script|onclick|class=|id=|javascript:|<style|url\(|<iframe|[ ;"]position:|[ ;"]top:/i);
-    expect(html).toContain("<b>ok</b>");
+    expect(html).not.toMatch(/<img|<script|onclick|javascript:|<style|url\(|<iframe|[ ;"]position:/i);
+    expect(html).toContain('class="pv-fixed pv-inset-0"');
+    expect(html).toContain(">ok</b>");
     expect(html).toContain('href="https://example.com"');
     expect(html).toContain('rel="noopener noreferrer"');
     expect(html).toMatch(/style="[^"]*color: red;"/);

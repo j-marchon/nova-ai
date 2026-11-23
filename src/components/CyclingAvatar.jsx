@@ -48,7 +48,7 @@ export function CyclingAvatar({ people, size = "w-9 h-9", interval = CYCLE_MS, c
       role="img"
       aria-label={pics.map((p) => p.name).filter(Boolean).join(", ")}
     >
-      <MediaCrossfade identity={many ? `${i % pics.length}:${pic.src.length}` : "one"} className="absolute inset-0">
+      <MediaCrossfade identity={many ? `${i % pics.length}:${pic.src.length}` : "one"} className="absolute inset-0" duration={.9} ease="power2.inOut">
         <Media src={pic.src} alt="" thumb={160} className="absolute inset-0 w-full h-full object-cover" />
       </MediaCrossfade>
     </div>

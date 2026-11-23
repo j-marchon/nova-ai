@@ -142,11 +142,71 @@ export function modelHeaders(id) {
   return { "x-goog-ext-525001261-jspb": value };
 }
 
-/* Models known from DevTools captures. Probably stale: "Learn models" in the
-   Bridge window (or POST /auth/gemini-web/models) replaces them. */
-export const KNOWN_MODELS = {
-  "gemini-4-argon": { name: "Gemini 4 Argon", header: "95a4c0abcba24364" },
-};
+/* Nothing is built in: the models come from the app itself (listModels).
+   Kept, empty, for bridge/tools/probe-gemini-web.mjs. */
+export const KNOWN_MODELS = {};
+
+/* The x-goog-ext-525001261-jspb value the web app sends today: its client
+   capabilities at 8 and, at 14 and 15, the picked model's mode and thinking
+   level (from listModels). The capabilities matter: without them the app's
+   model list leaves out models such as 4 Carbon. Checked against a live Pro
+   account in Nov 2026: StreamGenerate answered with 4 Hydrogen for mode 1
+   while the account's own choice was 4 Neon. */
+const APP_CAPABILITIES = [4, 33, 22, 5, 6, 8, 16, 19, 20, 38];
+export function appModelHeader(mode, level = null) {
+  const h = [1, null, null, null, null, null, "en", null, APP_CAPABILITIES, null, null, null, null, null];
+  if (mode != null) h.push(mode, level);
+  return JSON.stringify(h);
+}
+
+const slugOf = (name) => String(name || "").toLowerCase().replace(/[^a-z0-9.]+/g, "-").replace(/^[-.]+|[-.]+$/g, "");
+
+/* The inner JSON of one rpc's answer in a batchexecute body, or null. */
+function rpcResult(body, rpc) {
+  for (const line of String(body || "").split("\n")) {
+    if (!line.startsWith("[")) continue;
+    let rows;
+    try { rows = JSON.parse(line); } catch { continue; }
+    if (!Array.isArray(rows)) continue;
+    for (const row of rows) {
+      if (Array.isArray(row) && row[0] === "wrb.fr" && row[1] === rpc && typeof row[2] === "string") {
+        try { return JSON.parse(row[2]); } catch { return null; }
+      }
+    }
+  }
+  return null;
+}
+
+/* The model picker's rows out of the app's otAQ7b answer, as
+   [{ slug, name, header, locked }]. Its [24] is [policy, entries]; an entry is
+   [info, levels, _, surfaces], where info[1] is the mode, info[4]/info[5] the
+   name the picker shows ("4 Hydrogen"), info[14] set when the plan has to be upgraded
+   for it, and each level is [id, name]. Surface 1 is the picker; the rest
+   repeat the models for other screens. A model with several thinking levels
+   is one row per level, as the picker offers them. Null when the answer is
+   not in that shape (the app changed). */
+export function parseGeminiModelList(body) {
+  const entries = rpcResult(body, "otAQ7b")?.[24]?.[1];
+  if (!Array.isArray(entries)) return null;
+  const out = [];
+  const seen = new Set();
+  const add = (m) => { if (m.slug && !seen.has(m.slug)) { seen.add(m.slug); out.push(m); } };
+  for (const e of entries) {
+    const [info, levels, , surfaces] = Array.isArray(e) ? e : [];
+    if (!Array.isArray(surfaces) || !surfaces.includes(1)) continue;
+    const mode = info?.[1];
+    /* info[4] is the short name ("Neon", "Auto"); info[5] the picker's label
+       for a model ("4 Neon"), but Auto's description */
+    const [short, long] = [String(info?.[4] || "").trim(), String(info?.[5] || "").trim()];
+    const name = short && long.includes(short) ? long : short || long;
+    if (!Number.isInteger(mode) || !name) continue;
+    const locked = info[14] != null;
+    const lv = (Array.isArray(levels) ? levels : []).filter((l) => Number.isInteger(l?.[0]) && typeof l?.[1] === "string" && l[1]);
+    if (lv.length > 1) for (const [id, label] of lv) add({ slug: slugOf(`${name} ${label}`), name: `${name} (${label})`, header: appModelHeader(mode, id), locked });
+    else add({ slug: slugOf(name), name, header: appModelHeader(mode, lv[0]?.[0] ?? null), locked });
+  }
+  return out;
+}
 
 /* ---- session ----------------------------------------------------------- */
 
@@ -310,22 +370,49 @@ export class GeminiWebSession {
     }
   }
 
-  /* Best effort: remove a conversation from the user's Gemini history, as the
-     app's own delete does (batchexecute GzXR5e). Unverified: errors ignored. */
+  /* One batchexecute call, as the app makes it. */
+  async _batch(rpc, payload, { signal, headers = {} } = {}) {
+    const qs = new URLSearchParams({ rpcids: rpc, "source-path": "/app", bl: this.bl || FALLBACK_BL, hl: "en", _reqid: String(this.reqId), rt: "c" });
+    if (this.sid) qs.set("f.sid", this.sid);
+    this.reqId += 100000;
+    const res = await this.request({
+      url: `${this.base}${BATCH_PATH}?${qs}`,
+      method: "POST",
+      headers: this._headers({ "Content-Type": "application/x-www-form-urlencoded;charset=utf-8", Origin: ORIGIN, Referer: `${ORIGIN}/`, "X-Same-Domain": "1", ...headers }),
+      body: new URLSearchParams({ "f.req": JSON.stringify([[[rpc, payload, null, "generic"]]]), at: this.at }).toString(),
+      signal,
+      timeoutMs: 15000,
+    });
+    this._absorb(res.headers);
+    return res;
+  }
+
+  /* The models the app's own picker offers this account (otAQ7b, called by
+     the app on load), locked ones included: see parseGeminiModelList. */
+  async listModels(signal) {
+    if (!this.ready) await this.init(signal);
+    let res;
+    try {
+      res = await this._batch("otAQ7b", "[1]", { signal, headers: { "x-goog-ext-525001261-jspb": appModelHeader() } });
+    } catch (e) {
+      throw new GeminiWebError(`Could not reach gemini.google.com (${e.message}).`, 502);
+    }
+    if (res.status === 401 || res.status === 403) throw new GeminiWebError("The Gemini app refused the sign-in. It may have expired. Sign in again.", 401);
+    if (res.status >= 400) throw new GeminiWebError(`The Gemini app did not list its models (${res.status}).`, 502);
+    const models = parseGeminiModelList(res.body);
+    if (!models) throw new GeminiWebError("Could not read the Gemini app's model list (the app changed).", 502);
+    return models;
+  }
+
+  /* Remove a conversation from the account's Gemini history, as the app's own
+     delete does (GzXR5e). Checked against a live account: the chat leaves the
+     history list (MaZiqc). True only when the rpc itself answered, since
+     batchexecute says 200 for a failed call too. */
   async deleteChat(cid) {
     if (!cid || !this.ready) return false;
-    const rpc = [[["GzXR5e", JSON.stringify([String(cid).replace(/^(?!c_)/, "c_")]), null, "generic"]]];
-    const qs = new URLSearchParams({ rpcids: "GzXR5e", "source-path": "/app", bl: this.bl || FALLBACK_BL, _reqid: String(this.reqId), rt: "c" });
-    this.reqId += 100000;
     try {
-      const res = await this.request({
-        url: `${this.base}${BATCH_PATH}?${qs}`,
-        method: "POST",
-        headers: this._headers({ "Content-Type": "application/x-www-form-urlencoded;charset=utf-8", Origin: ORIGIN, Referer: `${ORIGIN}/`, "X-Same-Domain": "1" }),
-        body: new URLSearchParams({ "f.req": JSON.stringify(rpc), at: this.at }).toString(),
-        timeoutMs: 15000,
-      });
-      return res.status < 400;
+      const res = await this._batch("GzXR5e", JSON.stringify([String(cid).replace(/^(?!c_)/, "c_")]));
+      return res.status < 400 && rpcResult(res.body, "GzXR5e") != null;
     } catch {
       return false;
     }

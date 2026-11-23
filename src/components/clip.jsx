@@ -268,15 +268,15 @@ export function useAvatarFile(onChange, title) {
   return { open: () => fileRef.current?.click(), input, editor, err };
 }
 
-export function AvatarPicker({ value, onChange, label = "Avatar" }) {
+export function AvatarPicker({ value, onChange, label = "Avatar", action }) {
   const pick = useAvatarFile(onChange, label);
   return (
     <div>
       <div className="text-xs font-medium tracking-wide text-zinc-400 uppercase mb-1.5">{label}</div>
       <div className="flex items-center gap-3">
         <Avatar src={value} name="?" size="w-14 h-14" />
-        <div className="flex-1 space-y-2">
-          <div className="flex items-center gap-2">
+        <div className="flex-1 min-w-0 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button type="button" size="sm" icon={ImageIcon} onClick={pick.open}>
               Choose picture
             </Button>
@@ -289,6 +289,7 @@ export function AvatarPicker({ value, onChange, label = "Avatar" }) {
           {pick.input}
           {pick.err && <p className="text-[11px] text-zinc-100">{pick.err}</p>}
         </div>
+        {action}
       </div>
       {pick.editor}
     </div>

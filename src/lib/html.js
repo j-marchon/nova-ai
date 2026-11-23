@@ -43,25 +43,100 @@ export function displaySource(text, rules, role, depth) {
 
 /* What the model's HTML may do. It is text from a model, so: no scripts,
    no forms, nothing that loads from the network (images, frames, media,
-   url() in styles), no classes or ids (the app's own classes could pin a
-   block over the whole screen), and no positioning out of the bubble. */
+   url() in styles), and nothing that can reach outside its bubble. A preset
+   that styles its trackers and hover cards brings its own <style>, classes
+   and small SVG icons, so those are kept, fenced in: every class and id is
+   renamed with a pv- prefix and every rule in a <style> is limited to the
+   bubble (scopeCss), so none of it can restyle the app. */
 const CONFIG = {
-  FORBID_TAGS: ["style", "img", "picture", "source", "video", "audio", "iframe", "frame", "object", "embed", "form", "input", "button", "textarea", "select", "option", "link", "meta", "base", "svg", "math"],
-  FORBID_ATTR: ["class", "id", "srcset", "background"],
+  FORBID_TAGS: ["img", "picture", "source", "video", "audio", "iframe", "frame", "object", "embed", "form", "input", "button", "textarea", "select", "option", "link", "meta", "base", "math", "use", "foreignObject", "image", "script"],
+  FORBID_ATTR: ["srcset", "background"],
+  FORCE_BODY: true,
 };
+
+const MAX_CSS = 60000;
+const unsafeValue = /url\s*\(|expression\s*\(|javascript:|@import|behavior\s*:|-moz-binding/i;
+
+/* One declaration list ("a:b;c:d"), minus what may not leave the bubble. */
+function cleanDeclarations(list) {
+  const out = [];
+  for (const raw of list.split(/;(?![^(]*\))/)) {
+    const i = raw.indexOf(":");
+    if (i < 1) continue;
+    const prop = raw.slice(0, i).trim().toLowerCase();
+    let value = raw.slice(i + 1).trim();
+    if (!prop || !value || unsafeValue.test(value)) continue;
+    if (prop === "position" && /^(fixed|sticky)\b/i.test(value)) continue;
+    if (prop === "z-index") value = String(Math.max(-1, Math.min(20, parseInt(value, 10) || 0)));
+    out.push(`${prop}:${value}`);
+  }
+  return out.join(";");
+}
+
+/* ".name" and "#name" in a selector renamed, leaving strings and
+   [attributes] alone; html, body and :root cannot be scoped and are cut. */
+function scopeSelector(sel) {
+  const t = sel.trim().replace(/^(?:html|body|:root)\b\s*/i, "");
+  if (!t || /^[>+~]/.test(t) || /^(?:html|body|:root)$/i.test(sel.trim())) return "";
+  const renamed = t.split(/(\[[^\]]*\]|"[^"]*"|'[^']*')/).map((part, i) => (i % 2 ? part : part.replace(/([.#])(-?[_a-zA-Z][\w-]*)/g, "$1pv-$2"))).join("");
+  return `.nv-pv ${renamed}`;
+}
+
+/* A preset's CSS, limited to the bubble it came in. */
+export function scopeCss(css) {
+  const src = String(css || "").replace(/\/\*[\s\S]*?\*\//g, "").slice(0, MAX_CSS);
+  const walk = (text) => {
+    let out = "";
+    let i = 0;
+    while (i < text.length) {
+      const open = text.indexOf("{", i);
+      const semi = text.indexOf(";", i);
+      if (open < 0) break;
+      if (semi >= 0 && semi < open && text.slice(i, semi).trim().startsWith("@")) { i = semi + 1; continue; }
+      const prelude = text.slice(i, open).trim();
+      let depth = 1;
+      let j = open + 1;
+      while (j < text.length && depth) { if (text[j] === "{") depth++; else if (text[j] === "}") depth--; j++; }
+      const body = text.slice(open + 1, j - 1);
+      i = j;
+      if (prelude.startsWith("@")) {
+        if (/^@(media|supports|container|layer)\b/i.test(prelude)) { const inner = walk(body); if (inner) out += `${prelude}{${inner}}`; }
+        else if (/^@(-webkit-)?keyframes\b/i.test(prelude)) { const frames = body.replace(/([^{}]+)\{([^{}]*)\}/g, (m, k, d) => `${k.trim()}{${cleanDeclarations(d)}}`); out += `${prelude}{${frames}}`; }
+        continue;
+      }
+      const selectors = prelude.split(/,(?![^(]*\))/).map(scopeSelector).filter(Boolean);
+      const decls = cleanDeclarations(body);
+      if (selectors.length && decls) out += `${selectors.join(",")}{${decls}}`;
+    }
+    return out;
+  };
+  return walk(src);
+}
 
 let purify = null;
 function purifier() {
   if (purify) return purify;
   purify = DOMPurify(typeof window !== "undefined" ? window : undefined);
+  purify.addHook("afterSanitizeElements", (node) => {
+    if (node.nodeName?.toLowerCase() !== "style") return;
+    const css = scopeCss(node.textContent);
+    if (css) node.textContent = css;
+    else node.parentNode?.removeChild(node);
+  });
   purify.addHook("afterSanitizeAttributes", (node) => {
     const st = node.style;
     if (st && node.hasAttribute?.("style")) {
       for (const prop of Array.from({ length: st.length }, (_, i) => st[i])) {
         const v = st.getPropertyValue(prop);
-        if (/^(position|z-index|inset|top|left|right|bottom)$/.test(prop) || /url\s*\(|expression\s*\(/i.test(v)) st.removeProperty(prop);
+        if ((prop === "position" && /^(fixed|sticky)/.test(v)) || unsafeValue.test(v)) st.removeProperty(prop);
+        else if (prop === "z-index") st.setProperty(prop, String(Math.max(-1, Math.min(20, parseInt(v, 10) || 0))));
       }
       if (!st.length) node.removeAttribute("style");
+    }
+    for (const attr of ["class", "id"]) {
+      const v = node.getAttribute?.(attr);
+      if (v == null) continue;
+      node.setAttribute(attr, attr === "id" ? `pv-${v}` : v.split(/\s+/).filter(Boolean).map((c) => `pv-${c}`).join(" "));
     }
     if (node.tagName === "A") {
       node.setAttribute("target", "_blank");

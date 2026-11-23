@@ -54,6 +54,15 @@ describe("activity store", () => {
     expect(activity.get()).toHaveLength(0);
   });
 
+  it("lets a failure shown on the island go by itself after 30 seconds", () => {
+    const h = startActivity({ kind: "reply", label: "Reply" });
+    h.fail(new Error("boom"));
+    vi.advanceTimersByTime(29000);
+    expect(first()).toMatchObject({ status: "error" });
+    vi.advanceTimersByTime(1100);
+    expect(activity.get()).toHaveLength(0);
+  });
+
   it("treats an abort as a cancel, not an error", () => {
     const h = startActivity({ label: "x" });
     h.cancel();

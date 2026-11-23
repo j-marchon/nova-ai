@@ -434,7 +434,7 @@ describe("Gallery", () => {
 describe("profile page", () => {
   const page = (key) => (ctx) => <ProfilePage ctx={ctx} accountKey={key} />;
   const openStats = async () => {
-    const t = button("Profile stats (debug)");
+    const t = button("Profile details");
     expect(t.getAttribute("aria-expanded")).toBe("false");
     expect(q('[data-testid="account-traits"]')).toBeNull();
     await click(t);
@@ -476,7 +476,7 @@ describe("profile page", () => {
     expect(qa('[data-testid="profile-activity"] [role="listitem"][data-post]').map((e) => e.dataset.post)).toEqual(["r1", "rp", "p3", "p2"]);
   });
 
-  it("a story character: its traits and sources in the collapsed debug panel, wealth included", async () => {
+  it("a story character: its traits and sources in the collapsed details panel, wealth included", async () => {
     await mount(page("char:c1"));
     await openStats();
     const rows = qa("[data-trait]").map((r) => [r.dataset.trait, r.querySelector("[data-source]").dataset.source]);

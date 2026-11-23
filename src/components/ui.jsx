@@ -193,7 +193,9 @@ export function useBackLayer(onBack, el) {
 
 /* screen: a full-screen page with a top bar instead of a sheet, for the
    bigger editors. action: an optional button on the right of that bar. */
-export function Modal({ title, onClose, children, wide = false, screen = false, action }) {
+/* `fixed`: one size whatever is in it, for a sheet with tabs, so switching
+   tabs never resizes or moves it (the content scrolls inside). */
+export function Modal({ title, onClose, children, wide = false, screen = false, fixed = false, action }) {
   const self = useRef({});
   const previousFocus = useRef(null);
   const parent = useContext(ModalParent);
@@ -264,6 +266,8 @@ export function Modal({ title, onClose, children, wide = false, screen = false, 
     const handle = el.firstElementChild?.offsetHeight || 0;
     const content = el.querySelector(".nv-sheet-body")?.scrollHeight || 0;
     const top = parseFloat(getComputedStyle(el.parentElement).paddingTop) || 0;
+    /* a fixed sheet folds back to its own size (.nv-sheet[data-fixed]) */
+    if (fixed) return Math.min(vh - top - 48, window.matchMedia?.("(min-width: 640px)")?.matches ? Math.min(vh * .8, 680) : vh * .88);
     return Math.min(vh - top - 48, handle + content);
   };
   const settleSheet = (el, styles, ms, then) => {
@@ -490,6 +494,7 @@ export function Modal({ title, onClose, children, wide = false, screen = false, 
         className={`nv-panel nv-frost nv-sheet relative w-full flex flex-col ${full ? "" : wide ? "max-w-2xl" : "max-w-lg"} overflow-hidden border-b-0 ${full ? "" : "sm:border-b"}`}
         data-closing={c}
         data-full={full ? "1" : undefined}
+        data-fixed={fixed ? "1" : undefined}
       >
         {/* The handle and the title are the drag zone: up to fill the
             screen, down to fold back or close. No band of its own colour:

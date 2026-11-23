@@ -2,7 +2,7 @@ import { layoutViewport } from "../lib/uiScale.js";
 import { chatAppearance } from "./chatAppearance.js";
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, FastForward, ImageIcon, Palette, Repeat2, Reply, Sparkles, X } from "lucide-react";
-import { AccBtn, Button, Modal, Slider } from "./ui.jsx";
+import { AccBtn, Button, Modal, Segmented, Slider, ToggleRow } from "./ui.jsx";
 import { DEFAULT_THEME, bgListOf } from "../lib/data.js";
 import { MAX_ANIMATED_MB, readImage, snapshotFile } from "../lib/util.js";
 import { BG_BITRATE, BG_LONG_SIDE, MAX_BG_CLIP, blobToDataUrl, canEncodeVideo, encodeClip, isVideoFile, probeVideo } from "../lib/video.js";
@@ -52,8 +52,13 @@ export function ThemeSection({ theme, onChange }) {
         </div>
 
         {bgs.length > 0 && (
-          <div className="nv-fade-x flex gap-2 overflow-x-auto pb-2 -mx-1 px-1">
-            {bgs.map((b, i) => (
+          <div className="nv-fade-x flex items-end gap-2 overflow-x-auto pt-2 pb-2 -mx-1 px-1">
+            {bgs.map((b, i) => {
+              /* this screen's crop when there is one, else the picture's own
+                 shape; one this screen's chat skips is shown greyed */
+              const shown = bgFor(b, vp);
+              const skipped = !bgsForScreen([b], vp, t.bgDesktopOnly).length;
+              return (
               <div key={i} className="relative shrink-0">
                 {/* tap to frame it again for this screen (a still; a video
                     or GIF keeps its framing) */}
@@ -61,15 +66,20 @@ export function ThemeSection({ theme, onChange }) {
                   type="button"
                   disabled={!canRecrop(b)}
                   onClick={() => setRecrop(i)}
+                  data-skipped={skipped ? "1" : undefined}
                   className="block rounded-lg overflow-hidden"
-                  aria-label={canRecrop(b) ? `Crop background ${i + 1} again for this screen` : `Background ${i + 1}`}
+                  aria-label={`${canRecrop(b) ? `Crop background ${i + 1} again for this screen` : `Background ${i + 1}`}${skipped ? " (not shown on this screen)" : ""}`}
                 >
                   <Media
-                    src={bgFor(b, vp).image}
-                    className="block w-14 object-cover rounded-lg border border-zinc-800"
-                    /* the render carries the screen shape it was framed for —
-                       0.64 is what the old 9/14 crops were baked at */
-                    style={{ aspectRatio: String(bgFor(b, vp).aspect || 0.64), opacity: Math.max(0.35, b.opacity) }}
+                    src={shown.image}
+                    className="block h-28 w-auto max-w-none object-cover rounded-lg border border-zinc-800"
+                    /* as tall as the row, as wide as its own shape — 0.64 is
+                       what the old 9/14 crops were baked at */
+                    style={{
+                      aspectRatio: String(shown.aspect || 0.64),
+                      opacity: skipped ? 0.3 : Math.max(0.35, b.opacity),
+                      filter: skipped ? "grayscale(1)" : undefined,
+                    }}
                   />
                 </button>
                 <button
@@ -81,7 +91,8 @@ export function ThemeSection({ theme, onChange }) {
                   <X size={11} />
                 </button>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -93,6 +104,18 @@ export function ThemeSection({ theme, onChange }) {
         >
           {bgs.length ? "Add another" : "Add a background image or video"}
         </Button>
+
+        {/* a phone shows only phone-shaped pictures; a computer can do the same for its own */}
+        {bgs.length > 0 && !onPhone() && vp.w >= vp.h && (
+          <div className="mt-3">
+            <ToggleRow
+              on={!!t.bgDesktopOnly}
+              onClick={() => set({ bgDesktopOnly: !t.bgDesktopOnly })}
+              title="Only desktop pictures"
+              sub="Skip pictures framed only for a phone"
+            />
+          </div>
+        )}
 
         {bgs.length > 1 && (
           <div className="mt-3">
@@ -122,7 +145,7 @@ export function ThemeSection({ theme, onChange }) {
 
       {recrop != null && bgs[recrop] && (
         <BgEditor
-          initial={{ original: bgFor(bgs[recrop], vp).image, opacity: bgs[recrop].opacity }}
+          initial={recropFrom(bgs[recrop], vp)}
           theme={t}
           onSave={(bg) => {
             const { original, ...slim } = bg;
@@ -142,11 +165,10 @@ export function ThemeSection({ theme, onChange }) {
              rather than closing. The editor calls onDone when the queue is
              empty. */
           onSave={(bg) => {
-            /* drop the full-size source: only the rendered image is needed
-               once it is one of several, and it halves what we store */
-            const { original, ...slim } = bg;
+            /* the full-size source stays with a still, so the other screen's
+               shape can be framed later from the real picture */
             const list = bgListOf({ ...t, bgs: pendingRef.current });
-            const next = [...list, slim];
+            const next = [...list, bg];
             pendingRef.current = next;
             setBgs(next);
           }}
@@ -169,7 +191,35 @@ export function bgFor(b, vp) {
   if (b?.alt && wide(b.alt.aspect) === want && wide(b.aspect) !== want) return { ...b, ...b.alt };
   return b;
 }
+/* whether a background has a crop of that shape, its own or its `alt` */
+const hasShape = (b, landscape) => wide(b?.aspect) === landscape || (!!b?.alt && wide(b.alt.aspect) === landscape);
+/* The backgrounds a chat on this screen rotates through. A portrait screen
+   skips pictures framed only for a computer; a wide one, with "Only
+   desktop pictures" on (theme.bgDesktopOnly), skips those framed only for a
+   phone. */
+export function bgsForScreen(list, vp, desktopOnly = false) {
+  if (vp.w < vp.h) return list.filter((b) => hasShape(b, false));
+  if (desktopOnly) return list.filter((b) => hasShape(b, true));
+  return list;
+}
+/* The two shapes a chat background is framed for: a phone's screen
+   (390 × 844, the usual 9:19.5) and a computer's (16:9). Each crop is kept
+   beside the other and each screen shows its own. */
+export const STAGES = { phone: { w: 390, h: 844 }, desktop: { w: 1280, h: 720 } };
+const onPhone = () => !!globalThis.window?.Capacitor?.isNativePlatform?.() || /Android|iPhone|iPad|iPod/i.test(globalThis.navigator?.userAgent || "");
 const canRecrop = (b) => !!b?.image && !b.video && !b.animated;
+/* Framing a saved picture again opens on the crop the row shows, in its own
+   shape (a desktop picture at 16:9, on a phone too); the switch picks the
+   other. From the kept original it lands on the same crop. */
+function recropFrom(b, vp) {
+  const shown = bgFor(b, vp);
+  return {
+    original: b.original || shown.image,
+    opacity: b.opacity,
+    mode: wide(shown.aspect) ? "desktop" : "phone",
+    ...(b.original ? { scale: shown.scale, nx: shown.nx, ny: shown.ny } : {}),
+  };
+}
 function withCrop(b, crop) {
   const { alt, ...base } = b;
   /* the same orientation as the saved crop replaces it; the other is kept beside */
@@ -328,7 +378,21 @@ export function BgEditor({ initial, theme, onSave, onDone, onClose }) {
   const [queue, setQueue] = useState([]);
   const [done, setDone] = useState(0);
   const frameRef = useRef(null);
-  const vp = useScreen();
+  const screen = useScreen();
+  /* Which screen this crop is for: either, on any device. It starts on
+     this screen's own shape, or the shape of the picture being reframed. */
+  const [mode, setMode] = useState(() => initial?.mode || (onPhone() || screen.w < screen.h ? "phone" : "desktop"));
+  const vp = STAGES[mode];
+  /* the sheet's inner width, so a 16:9 preview fills it */
+  const boxRef = useRef(null);
+  const [boxW, setBoxW] = useState(0);
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(([e]) => setBoxW(Math.round(e.contentRect.width)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const [src, setSrc] = useState(initial?.original || null);
   /* an animated file is kept whole and framed live; see save() */
   const [animated, setAnimated] = useState(!!initial?.animated);
@@ -347,7 +411,10 @@ export function BgEditor({ initial, theme, onSave, onDone, onClose }) {
   const [busy, setBusy] = useState(false);
 
   /* ---- the preview is the screen, scaled down by k ---- */
-  const frameH = Math.round(Math.min(vp.h * 0.5, 460));
+  const frameW0 = mode === "desktop"
+    ? Math.min(boxW || screen.w * 0.8, screen.h * 0.55 * (vp.w / vp.h))
+    : Math.min(screen.h * 0.5, 460) * (vp.w / vp.h);
+  const frameH = Math.round(frameW0 * (vp.h / vp.w));
   const k = frameH / vp.h;
   const frameW = vp.w * k; // left unrounded so the scaled stage fits exactly
 
@@ -361,6 +428,8 @@ export function BgEditor({ initial, theme, onSave, onDone, onClose }) {
     initialScale: initial?.scale || 1,
     initialPos: { x: (initial?.nx ?? 0) * vp.w, y: (initial?.ny ?? 0) * vp.h },
   });
+  /* each shape starts from the middle */
+  const changeMode = (m) => { if (m !== mode) { setMode(m); setPos({ x: 0, y: 0 }); setScale(1); } };
   const draw = imgSize ? bgSize(imgSize, vp, scale) : null;
 
   useEffect(() => {
@@ -505,7 +574,7 @@ export function BgEditor({ initial, theme, onSave, onDone, onClose }) {
     const canvas = document.createElement("canvas");
     canvas.width = cw;
     canvas.height = ch;
-    const k2 = cw / vp.w; // screen px -> canvas px
+    const k2 = cw / vp.w; // stage px -> canvas px
     const ctx = canvas.getContext("2d");
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
@@ -539,8 +608,13 @@ export function BgEditor({ initial, theme, onSave, onDone, onClose }) {
     : null;
 
   return (
-    <Modal title="Chat background" onClose={onClose}>
-      <div className="space-y-4">
+    <Modal title="Chat background" onClose={onClose} wide={screen.w >= 900}>
+      <div ref={boxRef} className="space-y-4">
+        <Segmented
+          value={mode}
+          onChange={changeMode}
+          options={[{ id: "phone", label: "Phone" }, { id: "desktop", label: "Desktop" }]}
+        />
         {!src ? (
           <button
             onClick={() => fileRef.current?.click()}

@@ -179,8 +179,11 @@ export const emptyData = {
        one replies come from. See lib/providers.js. */
     providers: DEFAULT_PROVIDERS,
     activeProvider: "openrouter",
-    /* Check for updates (lib/updates.js): off until the user turns it on */
-    updateCheck: false,
+    /* Check for updates (lib/updates.js): on, until the user turns it off */
+    updateCheck: true,
+    /* Which generation of these defaults the data has been moved onto
+       (see DEFAULTS_GEN); a restore of an older backup keeps this device's */
+    defaultsGen: 0,
     /* Backup switches (Settings → You), followed by Sync's Send too:
        API keys in the file (off), the skins added here (off) */
     backupCredentials: false,
@@ -258,7 +261,7 @@ export const emptyData = {
        kept even while that skin is not on this device */
     skin: "nova",
     /* the skin in chats too (Look → Skin in chats); off, chats wear Nova's own */
-    skinInChat: true,
+    skinInChat: false,
     accent: "#ffffff",
     /* "dark" | "light" | "auto" (follows the phone) */
     scheme: "dark",
@@ -350,6 +353,20 @@ export function fromGroupChat(chat, characters = []) {
 
 /* Shape-fixing and the run of small migrations, kept apart from where the
    bytes came from so both storage paths get the same treatment. */
+/* Defaults that changed on purpose, applied once to data from before. The
+   marker travels with the data, so an update never applies them again and a
+   later choice stays. A backup that predates them does not bring its old
+   values back over this device's (keepDeviceDefaults). */
+export const DEFAULTS_GEN = 1;
+export function keepDeviceDefaults(current, restored, predates) {
+  if (!predates || !restored) return restored;
+  return {
+    ...restored,
+    settings: { ...restored.settings, updateCheck: current?.settings?.updateCheck !== false, defaultsGen: DEFAULTS_GEN },
+    appearance: { ...restored.appearance, skinInChat: current?.appearance?.skinInChat === true },
+  };
+}
+
 export function normalizeData(input) {
       const p = isRecord(input) ? { ...input } : {};
       for (const k of ["settings", "ledger", "appearance"]) if (!isRecord(p[k])) delete p[k];
@@ -370,6 +387,12 @@ export function normalizeData(input) {
         ledger: { ...emptyData.ledger, ...(p.ledger || {}) },
         appearance: { ...emptyData.appearance, ...(p.appearance || {}) },
       };
+      /* defaults that changed (DEFAULTS_GEN): once per data set */
+      if (!(Number(p.settings?.defaultsGen) >= DEFAULTS_GEN)) {
+        d.settings.updateCheck = true;
+        d.appearance.skinInChat = false;
+      }
+      d.settings.defaultsGen = Math.max(DEFAULTS_GEN, Number(p.settings?.defaultsGen) || 0);
       /* the retired social feature's worlds and settings */
       delete d.socialWorlds;
       delete d.settings.social;

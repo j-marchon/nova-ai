@@ -4,14 +4,13 @@ import { toLayout } from "../lib/uiScale.js";
 import { chatAppearance } from "../components/chatAppearance.js";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { BookMarked, Brain, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, Download, FastForward, Gauge, GitBranch, Globe, Image as ImageIcon, Languages, ListX, MoreVertical, Palette, Pencil, Play, Plus, RefreshCw, Reply, Send, Settings as Cog, Smartphone, Square, StickyNote, Trash2, User, Volume2, VolumeX, Wand2, X, Zap } from "lucide-react";
+import { BookMarked, Brain, PanelLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, Download, FastForward, Gauge, GitBranch, Globe, Image as ImageIcon, Languages, ListX, MoreVertical, Palette, Pencil, Play, Plus, RefreshCw, Reply, Send, Settings as Cog, Smartphone, SlidersHorizontal, Square, StickyNote, Trash2, User, Volume2, VolumeX, Wand2, X, Zap } from "lucide-react";
 import { BookmarksModal } from "../components/BookmarksModal.jsx";
 import { ImageGenModal } from "../components/ImageGenModal.jsx";
 import { QuickRepliesStrip, QuickRepliesManager, SendAsModal } from "../components/QuickReplies.jsx";
 import { RP } from "../components/RP.jsx";
 import { StyleChips } from "../components/StylePicker.jsx";
 import { ChatBackdrop, Texture } from "../components/backdrops.jsx";
-import { CastPlus } from "../components/CastPlus.jsx";
 import { CyclingAvatar } from "../components/CyclingAvatar.jsx";
 import { useLongPress, useMultiTap } from "../components/gestures.js";
 import { ModelPicker, useEndpointLabel } from "../components/models.jsx";
@@ -21,13 +20,14 @@ import { providerOf, short } from "../lib/api.js";
 import { fileSafe, fillNames, saveFile } from "../lib/cards.js";
 import { chatToJsonl } from "../lib/chatFile.js";
 import { DEFAULT_AUTHORS_NOTE, DEFAULT_HISTORY_TOKENS, addBookmark, bgListOf, castBgListOf, createChatBranch, greetingsOf, removeBookmark, themeOf } from "../lib/data.js";
-import { activeSummary, afterDeleting, cleanNote, keepIfCovered, memoryCovered, sceneHead } from "../lib/memory.js";
+import { activeSummary, afterDeleting, cleanNote, keepIfCovered, memoryConflicts, memoryCovered, memoryOffEverywhere, sceneHead } from "../lib/memory.js";
+import { MemoryConflict } from "../components/MemoryConflict.jsx";
 import { buildSceneVisualPrompt } from "../lib/imageGen.js";
 import { runMacros } from "../lib/macros.js";
 import { executeSlashCommand, isSlashCommand, parseSlashCommand, suggestSlashCommands } from "../lib/slash.js";
 import { breakdownTokens, formatTokens } from "../lib/tokens.js";
 import { translateText } from "../lib/translate.js";
-import { canSpeak, speak, speechOptions, stopSpeech } from "../lib/tts.js";
+import { canSpeak, speak, speechOptions, speechProblem, stopSpeech } from "../lib/tts.js";
 import { activePreset, genParams, styleLabel, thinkingOn, withThinking } from "../lib/styles.js";
 import { DEFAULT_LORE_BUDGET, DEFAULT_SCAN_DEPTH, chatBooks, entryLabel, selectLore } from "../lib/lore.js";
 import { castMember, ensembleOf, ensembleTitle, leadNames, linkedCards, replySpeakers, scopeCandidates, scopeOf } from "../lib/scope.js";
@@ -94,7 +94,7 @@ export function ChatPage(props) {
 
 
 
-function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit }) {
+function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit, onToggleList, listOpen, plain }) {
   const chat = data.chats.find((c) => c.id === chatId);
   const isUni = chat?.kind === "universe";
   const universe = isUni ? data.universes.find((u) => u.id === chat?.universeId) : null;
@@ -192,7 +192,11 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit }
   const scopeBusy = useRef(false);
   /* the active prompt's display regex (html.js); empty for every prompt
      but an imported SillyTavern preset that has some */
-  const display = useMemo(() => genParams(data.settings).display || [], [data.settings]);
+  const display = useMemo(() => {
+    const rules = genParams(data.settings).display || [];
+    /* patterns that name {{user}} or {{char}} are filled from this chat */
+    return rules.some((r) => r.sub) ? Object.assign([...rules], { ctx: { user: userName, char: character?.name || universe?.name } }) : rules;
+  }, [data.settings, userName, character?.name, universe?.name]);
   const scopeSettings = scopeActive && !(data.settings.sceneEvery > 0) ? { ...data.settings, sceneEvery: 2 } : data.settings;
   const [thinkOpen, setThinkOpen] = useState(false);
   const error = chat.lastError;
@@ -249,6 +253,7 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit }
   const [regenMsg, setRegenMsg] = useState(null); // { msg, text }
   const [confirm, setConfirm] = useState(null);   // { title, body, run }
   const [showStyle, setShowStyle] = useState(false);     // reply-style preset
+  const [conflictAsked, setConflictAsked] = useState(null); // style id the overlap sheet was closed for
   const [showModelPick, setShowModelPick] = useState(false);
   const [showGreetings, setShowGreetings] = useState(false); // opening scenario sheet
   const [showBookmarks, setShowBookmarks] = useState(false);
@@ -391,9 +396,9 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit }
     ? universe?.name
     : castPeople.length > 5 ? castNames.join(", ") : ensembleTitle(castPeople) || character?.name;
   const title = (linkedHere.length && chat.title?.trim()) || castTitle;
-  /* the header shows one name, the first one's (or the chat's own name);
-     everyone else is behind the + beside it */
-  const headTitle = (linkedHere.length && chat.title?.trim()) || (castPeople.length > 1 ? castPeople[0]?.name : title);
+  /* the header shows the chat's own name, or everyone in it, cut with …
+     where it does not fit */
+  const headTitle = (linkedHere.length && chat.title?.trim()) || (castPeople.length > 1 ? castPeople.map((c) => c.name).filter(Boolean).join(", ") : title);
   const headerAvatar = isUni ? universe?.avatar : character?.avatar;
   /* who the conversation is with, as far as names in notes go */
   const charLabel = castTitle;
@@ -842,7 +847,10 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit }
         ...speechOptions(data.settings?.voice || {}, data.settings?.providers || []),
         onStart: () => setSpeakingMsgId(m.id),
         onEnd: () => setSpeakingMsgId((cur) => (cur === m.id ? null : cur)),
-        onError: () => setSpeakingMsgId((cur) => (cur === m.id ? null : cur)),
+        onError: (err) => {
+          setSpeakingMsgId((cur) => (cur === m.id ? null : cur));
+          showToast(speechProblem(err), { tone: "warn" });
+        },
       });
     }
   };
@@ -1115,6 +1123,12 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit }
 
   /* labels shown on the composer buttons */
   const styleName = styleLabel(data.settings);
+  /* a reply style that already keeps what Nova keeps (memory.js): asked once per chat and style */
+  const overlapKey = `${data.settings.stylePreset}:${data.settings.customStyleId || ""}`;
+  const overlap = useMemo(
+    () => (chat?.memoryOff?.asked === overlapKey || conflictAsked === overlapKey || !chat?.messages?.length ? [] : memoryConflicts(genParams(data.settings), data.settings, chat)),
+    [data.settings, chat?.memoryOff, chat?.messages?.length, overlapKey, conflictAsked],
+  );
   const styleColor = "var(--acc)";
   /* lit on the composer: a prompt of your own, and an author's note with
      something in it */
@@ -1219,6 +1233,14 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit }
   const hasBg = bgs.length > 0;
   const movingBg = bgs.some(b => b.animated || isVideo(b.image));
   const paint = chatAppearance(theme, { hasBackground: hasBg, moving: movingBg });
+  const chatVars = { "--nv-chat-edge": paint.composerBorder, "--nv-chat-panel": paint.composerBg, "--nv-chat-control": paint.controlBg, "--nv-chat-blur": paint.composerBlur };
+  /* Look → Skin in chats off ("dark" / "light"): the chat's own parts (header,
+     messages, message box) wear Nova's plain look under any skin, on a solid
+     black or white page; the sheets and the phone opened from here keep the
+     skin. The colours are named again on each part, so they resolve against
+     Nova's own tokens there rather than the skin's. */
+  const plainSurface = plain ? { "data-theme": plain } : null;
+  const plainVars = plain ? chatVars : null;
   const { userBubbleBg, aiBubbleBg, userBubbleFg, aiBubbleFg, composerBg, composerBlur,
     composerBorder, bubbleBorder, bubbleSheen, glassEdge } = paint;
   const chipBlur = {};
@@ -1302,21 +1324,27 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit }
 
   return (
     <div className="nv-chat-root fixed inset-0 flex flex-col bg-zinc-950 z-40 nv-safe-x" data-moving={movingBg ? "1" : undefined} data-editing={inlineEdit ? "1" : undefined}
-      style={{ "--nv-chat-edge": paint.composerBorder, "--nv-chat-panel": paint.composerBg, "--nv-chat-control": paint.controlBg, "--nv-chat-blur": paint.composerBlur }}>
+      data-plain={plain || undefined}
+      style={chatVars}>
 
       {/* full-screen character backdrop — sits behind header, messages, and composer */}
-      <ChatBackdrop list={bgs} seconds={theme.bgSeconds} />
-      {!hasBg && <div aria-hidden className="absolute inset-0 pointer-events-none"><Texture /></div>}
+      <ChatBackdrop list={bgs} seconds={theme.bgSeconds} desktopOnly={!!theme.bgDesktopOnly} />
+      {!hasBg && !plain && <div aria-hidden className="absolute inset-0 pointer-events-none"><Texture /></div>}
       {/* header */}
       <div
-        className={`nv-chat-header relative flex items-center gap-3 px-3 sm:px-5 z-10 ${hasBg ? "" : "nv-chat-head"}`}
+        className={`nv-chat-header relative flex items-center gap-3 px-3 sm:px-5 z-10 ${hasBg ? "" : "nv-chat-head"} ${plain ? "nv-plain" : ""}`}
+        {...plainSurface}
         style={{
+          ...plainVars,
           paddingTop: "calc(0.625rem + var(--sa-t))",
           paddingBottom: "0.625rem",
           background: "transparent",
         }}
       >
         <Button variant="icon" icon={ChevronLeft} onClick={goBack} className="-ml-2 rounded-full [--nv-btn-icon:22px]" style={hasBg ? { filter: "none" } : {}} aria-label="Go back" />
+        {onToggleList && (
+          <Button variant="icon" icon={PanelLeft} onClick={onToggleList} className="rounded-full" style={hasBg ? { filter: "none" } : {}} aria-label={listOpen ? "Hide chats" : "Show chats"} aria-expanded={!!listOpen} title="Chats" />
+        )}
         {isUni && !headerAvatar ? (
           <div className="nv-hair w-9 h-9 rounded-full flex items-center justify-center shrink-0">
             <Globe size={15} strokeWidth={1.5} className="text-zinc-500" />
@@ -1337,8 +1365,6 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit }
           <p className="text-[15px] font-semibold tracking-tight text-zinc-100 truncate leading-tight">
             {headTitle || "Chat"}
           </p>
-          {/* the rest of the cast, behind a + */}
-          {castPeople.length > 1 && <CastPlus people={castPeople.map((c) => ({ name: c.name, src: c.avatar }))} />}
         </div>
         {/* this chat's look and its memory, in one sheet. It breathes in the
             accent while a memory or scene note is being written. */}
@@ -1355,7 +1381,7 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit }
 
 
       {/* messages, over this character's backdrop */}
-      <div className="nv-chat-list flex-1 relative overflow-hidden">
+      <div className={`nv-chat-list flex-1 relative overflow-hidden ${plain ? "nv-plain" : ""}`} {...plainSurface} style={plainVars}>
         <div
           ref={scrollerRef}
           className="nv-chat-messages absolute inset-0 overflow-y-auto px-1 sm:px-6 py-6"
@@ -1455,8 +1481,9 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit }
 
       {/* composer */}
       <div
-        className="nv-chat-dock relative px-4 pt-2 z-10"
-        style={{ background: "transparent" }}
+        className={`nv-chat-dock relative px-4 pt-2 z-10 ${plain ? "nv-plain" : ""}`}
+        {...plainSurface}
+        style={{ ...plainVars, background: "transparent" }}
       >
         <div className="max-w-2xl lg:max-w-4xl mx-auto">
           {/* Nova Scope: who is in this story, above the message box. A
@@ -1688,7 +1715,7 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit }
       )}
 
       {chatSettings && (
-        <Modal title="Chat settings" onClose={() => setChatSettings(null)} wide>
+        <Modal title="Chat settings" onClose={() => setChatSettings(null)} wide fixed>
           {/* the same tab bar as Settings: icon over label, the open one lit.
               Seven tabs are more than a phone fits, so the row scrolls. */}
           <ScrollTabs
@@ -1698,7 +1725,7 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit }
           >
             {[
               ["general", "Persona", User], ["look", "Look", Palette],
-              ["memory", "Memory", Brain], ["note", "Notes", StickyNote],
+              ["memory", "Memory", Brain], ["note", "Quick tweaks", SlidersHorizontal],
               ["bookmarks", "Bookmarks", BookMarked], ["art", "Scene art", ImageIcon],
               ["tokens", "Tokens", Gauge], ["export", "Export", Download],
             ].map(([id, label, Icon]) => {
@@ -1706,7 +1733,8 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit }
               return (
                 <button
                   key={id}
-                  onClick={() => setChatSettings(id)}
+                  /* each tab opens at its top */
+                  onClick={(e) => { e.currentTarget.closest(".nv-sheet-body")?.scrollTo?.({ top: 0 }); setChatSettings(id); }}
                   aria-pressed={on}
                   className={`flex flex-row items-center justify-center gap-2 px-3.5 py-2 min-h-[44px] shrink-0 whitespace-nowrap rounded-xl border text-xs font-medium ${on ? "" : "border-transparent text-zinc-500 hover:text-zinc-100"}`}
                   style={on ? { ...selStyle(true), color: "var(--acc)" } : {}}
@@ -1801,6 +1829,24 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit }
           )}
           </div>
         </Modal>
+      )}
+
+      {overlap.length > 0 && !showStyle && (
+        <MemoryConflict
+          styleName={styleName}
+          conflicts={overlap}
+          onKeep={() => setConflictAsked(overlapKey)}
+          onApply={(parts, everywhere) => {
+            setConflictAsked(overlapKey);
+            /* every chat: Nova's own switched off in settings; this chat only: on the chat */
+            const mine = everywhere ? {} : Object.fromEntries(parts.map((k) => [k, true]));
+            update((d) => ({
+              ...d,
+              ...(everywhere ? { settings: memoryOffEverywhere(d.settings, parts) } : null),
+              chats: d.chats.map((c) => (c.id === chatId ? { ...c, memoryOff: { ...(c.memoryOff || {}), ...mine, asked: overlapKey } } : c)),
+            }));
+          }}
+        />
       )}
 
       {showStyle && (
@@ -2070,7 +2116,7 @@ const TOKEN_PARTS = [
   { key: "systemTokens", label: "Instructions", sub: "your prompt, reply style and Nova's notes", color: "var(--nv-ink)", opacity: 0.28 },
   { key: "cardTokens", label: "Card", sub: "who you are talking to, and your persona", color: "var(--nv-ink)", opacity: 0.4 },
   { key: "loreTokens", label: "Lore", sub: "lorebook entries in play now", color: "var(--nv-ink)", opacity: 0.52 },
-  { key: "noteTokens", label: "Author's note", sub: "", color: "var(--nv-ink)", opacity: 0.64 },
+  { key: "noteTokens", label: "Quick tweaks", sub: "", color: "var(--nv-ink)", opacity: 0.64 },
   { key: "memoryTokens", label: "Memory", sub: "the story so far and scene notes", color: "var(--nv-ink)", opacity: 0.78 },
   { key: "historyTokens", label: "Conversation", sub: "the messages resent each turn", color: "var(--acc)", opacity: 1 },
 ];

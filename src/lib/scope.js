@@ -350,6 +350,7 @@ export function cardCastText(character, { limit = 24000 } = {}) {
   return [
     character.description && `[Description]\n${character.description}`,
     character.personality && `[Personality]\n${character.personality}`,
+    character.scenario && `[Scenario]\n${character.scenario}`,
     greets.length && `[Openings]\n${greets.join("\n\n")}`,
     character.exampleDialogs && `[Example dialogue]\n${character.exampleDialogs}`,
     character.creatorNotes && `[Author's notes]\n${character.creatorNotes}`,

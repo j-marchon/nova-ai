@@ -1047,8 +1047,7 @@ export function writerModelPatch(settings, id) {
 }
 
 /* Thinking room on top of the card's own budget, by requested effort. Only
-   used when the caller asks for a detail level (maxTokens/effort); without
-   one, the writer keeps its old fixed budget. */
+   used when the caller supplies an output budget. */
 const JSON_THINK_ROOM = { low: 2000, medium: 4000, high: 8000 };
 const JSON_EFFORTS = new Set(["low", "medium", "high"]);
 
@@ -1082,8 +1081,8 @@ function jsonBudget(settings, opts = {}) {
   return { bodyMax, cap: bodyMax, effort };
 }
 
-/* `maxTokens` and `effort` ("low" | "medium" | "high") are optional: Card
-   Studio's detail level sets them. Effort reaches only providers whose
+/* `maxTokens` and `effort` ("low" | "medium" | "high") are optional.
+   Effort reaches only providers whose
    switch is known here: OpenRouter's reasoning.effort, and reasoning_effort
    for Nova Bridge and OpenAI-format reasoning ids. Gemini keeps its thinking
    flag (it rejects both at once) and Claude decides for itself; for those,

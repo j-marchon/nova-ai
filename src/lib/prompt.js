@@ -236,6 +236,7 @@ export function buildApiMessages({
     for (const c of cast) {
       sys += `\n\n[Character: ${c.name}]\n${fill(c.description, c.name) || c.name}`;
       if (c.personality) sys += `\n\n[${c.name}'s personality]\n${fill(c.personality, c.name)}`;
+      if (c.scenario) sys += `\n\n[${c.name}'s scenario]\n${fill(c.scenario, c.name)}`;
       sys += examples(c, `${c.name}'s example dialogue`);
       sys += instructions(c, `${c.name}: instructions from the card's author`);
     }
@@ -246,10 +247,12 @@ export function buildApiMessages({
        {{user}} all through their descriptions */
     if (character.description) sys += `\n\n[Character]\n${fill(character.description)}`;
     if (character.personality) sys += `\n\n[Personality]\n${fill(character.personality)}`;
+    if (character.scenario) sys += `\n\n[Scenario]\n${fill(character.scenario)}`;
     sys += examples(character, "Example dialogue");
     sys += instructions(character, "Instructions from the card's author");
   }
 
+  const baseSys = sys;
   if (persona?.description) sys += `\n\n[About ${userName}]\n${persona.description}`;
 
   /* Lorebooks. Always-on entries here, in the fixed block; keyword entries
@@ -273,7 +276,49 @@ export function buildApiMessages({
      read before the conversation, and the shape line below closes the prompt.
      Between the opening frame and that line the style now holds both ends of
      the system message instead of being buried in the middle. */
-  if (style.prompt) sys += `\n\n[Style]\n${fill(style.prompt)}`;
+  if (style.custom && style.layout?.length) {
+    /* An imported preset that places its own text around the card, persona
+       and world sections (its labels sit right before what they label):
+       built in its order, in place of Nova's framing and [Style]. */
+    const cast = universe ? [] : [character, ...linked];
+    const per = (pick) => cast.map((c) => pick(c)).filter(Boolean);
+    const named = (c, t) => (cast.length > 1 ? `[${c.name}]\n${t}` : t);
+    const fmt = (key, fallback, value, c) => {
+      const f = style.formats?.[key];
+      return f ? fill(f.replace(/\{\{(scenario|personality)\}\}|\{0\}/gi, () => value), c?.name) : fallback;
+    };
+    const sections = {
+      worldInfoBefore: lore.constant.length ? lore.constant.map((e) => fill(e.content.trim())).join("\n\n") : "",
+      worldInfoAfter: "",
+      personaDescription: persona?.description ? String(persona.description).trim() : "",
+      charDescription: universe ? baseSys : per((c) => {
+        const d = fill(c.description, c.name);
+        const ins = useCard && cardText(c.systemPrompt) ? `\n\n${fill(cardText(c.systemPrompt), c.name)}` : "";
+        return d || ins ? named(c, `${d}${ins}`.trim()) : "";
+      }).join("\n\n"),
+      charPersonality: per((c) => (c.personality ? named(c, fmt("personality", fill(c.personality, c.name), fill(c.personality, c.name), c)) : "")).join("\n\n"),
+      scenario: per((c) => (typeof c.scenario === "string" && c.scenario.trim() ? named(c, fmt("scenario", fill(c.scenario, c.name), fill(c.scenario, c.name), c)) : "")).join("\n\n"),
+      dialogueExamples: per((c) => (c.exampleDialogs ? fill(c.exampleDialogs, c.name) : "")).join("\n\n"),
+    };
+    const parts = [];
+    const L = style.layout;
+    for (let i = 0; i < L.length; i++) {
+      const it = L[i];
+      if (it.marker) { if (sections[it.marker]) parts.push(sections[it.marker]); continue; }
+      const text = fill(it.text);
+      if (!text.trim()) continue;
+      /* a one-line label with nothing under it is not sent */
+      if (text.length <= 160 && !text.includes("\n")) {
+        let j = i + 1;
+        let any = false;
+        while (j < L.length && L[j].marker) { if (sections[L[j].marker]) any = true; j++; }
+        if (j > i + 1 && !any) continue;
+      }
+      parts.push(text);
+    }
+    sys = parts.join("\n\n");
+    if (summary) sys += `\n\n[Story so far]\nWhat happened earlier in this story, before the conversation below:\n${summary}`;
+  } else if (style.prompt) sys += `\n\n[Style]\n${fill(style.prompt)}`;
 
   /* One closing line. Skipped for Bare along with [Style]: it is a style
      rule, and Bare exists to show what the model does with none. Custom
@@ -312,7 +357,7 @@ export function buildApiMessages({
   };
   /* an imported preset's prompt-only regex (tavern.js): what is sent is
      trimmed, what is saved and shown is not */
-  const sent = applyPromptRegex(kept, style.regex);
+  const sent = applyPromptRegex(kept, style.regex, { user: userName, char: charName });
   const msgs = [
     { role: "system", content: sys },
     ...sent.map((m) => {
@@ -416,6 +461,7 @@ export function buildApiMessages({
     if (loreNote) attach(loreNote);
     if (recalledNote) attach(recalledNote);
     for (const note of ambient) attach(note);
+    if (style.modes?.impersonate) attach(fill(style.modes.impersonate));
     attach(
       `[For this one message, write ${userName}'s next turn instead. Write only what ${userName} says and does, as ${userName}, the way ${userName} has been writing so far: similar length, tone and markup. ` +
       `Nothing for ${them}, and no name label. Write in the language ${userName} writes in.` +
@@ -456,6 +502,8 @@ export function buildApiMessages({
 
   /* A model preset's post-history block, where its page puts it. */
   if (style.post) tail.push(fill(style.post));
+  /* and what it says only for Continue */
+  if (mode === "continue" && style.modes?.continue) tail.push(fill(style.modes.continue));
 
   /* Nova Scope: the rest of the cast and how the scene plays (scope.js).
      At the end with the tracker, so the cached system block never changes

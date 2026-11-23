@@ -130,7 +130,7 @@ export function replaceLibrary(remote) {
 }
 
 /* settings that belong to this device, whatever the copy says */
-export const DEVICE_SETTINGS = ["syncRev", "syncAt", "bridgeLan", "bridgeCardOpen", "dailyBackup"];
+export const DEVICE_SETTINGS = ["syncRev", "syncAt", "bridgeLan", "bridgeCardOpen", "dailyBackup", "updateCheck", "defaultsGen"];
 const isBridge = (p) => p?.preset === "nova-bridge";
 const filled = (v) => v != null && v !== "";
 
@@ -184,7 +184,7 @@ export function syncSettings(mine = {}, theirs = {}, how = "merge") {
    or replaced), settings, appearance (but its UI size) and name. */
 export function applySync(local, remote, how = "merge") {
   const library = how === "merge" ? mergeLibrary(local, remote).patch : replaceLibrary(remote);
-  const appearance = remote.appearance ? { ...local.appearance, ...remote.appearance, uiScale: local.appearance?.uiScale } : local.appearance;
+  const appearance = remote.appearance ? { ...local.appearance, ...remote.appearance, uiScale: local.appearance?.uiScale, skinInChat: local.appearance?.skinInChat } : local.appearance;
   return {
     ...library,
     settings: syncSettings(local.settings, remote.settings, how),

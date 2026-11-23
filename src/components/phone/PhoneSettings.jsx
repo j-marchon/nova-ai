@@ -1,6 +1,6 @@
 import { useMemo } from "react";
-import { Segmented, ToggleRow } from "../ui.jsx";
-import { money } from "../../lib/api.js";
+import { useState } from "react";
+import { Segmented, TextInput, ToggleRow } from "../ui.jsx";
 import { formatTokens } from "../../lib/tokens.js";
 import { setLevel, setMe, traitsOf, usageOf } from "../../lib/phone.js";
 
@@ -67,8 +67,48 @@ export function PhoneSettings({ ctx }) {
           <Segmented options={WEALTH_OPTIONS} value={wealth} onChange={(w) => ctx.act((x) => setMe(x, { traits: { wealth: w }, from: "manual" }))} />
         </div>
       </div>
+      <About ctx={ctx} traits={traitsOf(me)} />
       <Usage ctx={ctx} />
     </div>
+  );
+}
+
+/* What the phone knows about the persona, beyond fame and money. Each one
+   is a short line the posts, replies and messages are written from; empty
+   removes it. */
+const ABOUT = [
+  ["looks", "Looks"], ["body", "Body"], ["age", "Age"], ["job", "Job"], ["hobby", "Hobby"],
+  ["style", "Style"], ["personality", "Personality"], ["home", "Home"],
+  ["relationship", "Relationship"], ["pets", "Pets"], ["languages", "Languages"], ["quirk", "Quirk"],
+];
+
+function AboutField({ field, label, value, onCommit }) {
+  const [draft, setDraft] = useState(null);
+  const commit = () => { if (draft != null && draft.trim() !== (value || "")) onCommit(field, draft.trim()); setDraft(null); };
+  return (
+    <label className="block min-w-0">
+      <span className="mb-1 block px-1 text-[11px] text-zinc-500">{label}</span>
+      <TextInput
+        value={draft ?? value ?? ""}
+        maxLength={60}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+        aria-label={label}
+      />
+    </label>
+  );
+}
+
+function About({ ctx, traits }) {
+  const set = (k, v) => ctx.act((x) => setMe(x, { traits: { [k]: v }, from: "manual" }));
+  return (
+    <section aria-labelledby="phone-about" data-testid="phone-about">
+      <p id="phone-about" className="mb-1.5 px-1 text-[11px] font-medium tracking-wide text-zinc-400 uppercase">About you</p>
+      <div className="grid grid-cols-2 gap-x-2.5 gap-y-2">
+        {ABOUT.map(([k, label]) => <AboutField key={k} field={k} label={label} value={traits[k]} onCommit={set} />)}
+      </div>
+    </section>
   );
 }
 
@@ -81,7 +121,6 @@ const ESTIMATE_ROWS = [
   ["replies", "More replies"],
 ];
 const n0 = (x) => (Number.isFinite(Number(x)) && Number(x) > 0 ? Number(x) : 0);
-const priced = (c) => Number.isFinite(c) && c > 0;
 
 function Usage({ ctx }) {
   const u = usageOf(ctx.h);
@@ -91,31 +130,36 @@ function Usage({ ctx }) {
     try { return ctx.tick?.estimate?.() || null; } catch { return null; }
   }, [ctx.h, ctx.messages?.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const rows = estimates ? ESTIMATE_ROWS.filter(([k]) => estimates[k]) : [];
+  const total = n0(u.tokensIn) + n0(u.tokensOut);
   return (
     <section aria-labelledby="phone-usage-title" data-testid="phone-usage" className="pt-2">
-      <p id="phone-usage-title" className="mb-1.5 px-1 text-[11px] font-medium tracking-wide text-zinc-400 uppercase">Usage (estimated)</p>
-      <div className="px-3.5 py-3 rounded-2xl bg-[var(--nv-control)] border border-[var(--nv-line)] space-y-2">
-        <p className="text-sm text-zinc-200 tabular-nums" data-testid="phone-usage-total">
-          {calls} {calls === 1 ? "request" : "requests"} · {formatTokens(n0(u.tokensIn))} in · {formatTokens(n0(u.tokensOut))} out
-          {priced(u.cost) ? ` · ${money(u.cost)}` : ""}
-          {n0(u.est) > 0 ? " (some estimated)" : ""}
-        </p>
+      <p id="phone-usage-title" className="mb-1.5 px-1 text-[11px] font-medium tracking-wide text-zinc-400 uppercase">Tokens</p>
+      <div className="px-3.5 py-3 rounded-2xl bg-[var(--nv-control)] border border-[var(--nv-line)] space-y-3">
+        <div data-testid="phone-usage-total">
+          <p className="text-2xl font-semibold tabular-nums text-zinc-100">{formatTokens(total)}<span className="ml-1.5 text-xs font-normal text-zinc-500">used</span></p>
+          <p className="mt-0.5 text-xs text-zinc-400 tabular-nums">
+            {formatTokens(n0(u.tokensIn))} in · {formatTokens(n0(u.tokensOut))} out · {calls} {calls === 1 ? "request" : "requests"}
+            {n0(u.est) > 0 ? " · some counted from the text" : ""}
+          </p>
+        </div>
         {rows.length > 0 && (
-          <dl className="space-y-1 text-xs" data-testid="phone-usage-estimates">
-            {rows.map(([k, label]) => {
-              const e = estimates[k];
-              return (
-                <div key={k} className="flex items-baseline gap-3 min-w-0" data-estimate={k}>
-                  <dt className="flex-1 min-w-0 truncate text-zinc-400">{label}</dt>
-                  <dd className="shrink-0 tabular-nums text-zinc-300">
-                    ~{formatTokens(n0(e.in))} in · ≤{formatTokens(n0(e.out))} out{priced(e.cost) ? ` · ~${money(e.cost)}` : ""}
-                  </dd>
-                </div>
-              );
-            })}
-          </dl>
+          <div>
+            <p className="mb-1 text-[11px] text-zinc-500">Next request</p>
+            <dl className="space-y-1 text-xs" data-testid="phone-usage-estimates">
+              {rows.map(([k, label]) => {
+                const e = estimates[k];
+                return (
+                  <div key={k} className="flex items-baseline gap-3 min-w-0" data-estimate={k}>
+                    <dt className="flex-1 min-w-0 truncate text-zinc-400">{label}</dt>
+                    <dd className="shrink-0 tabular-nums text-zinc-300">
+                      ~{formatTokens(n0(e.in))} in · ≤{formatTokens(n0(e.out))} out
+                    </dd>
+                  </div>
+                );
+              })}
+            </dl>
+          </div>
         )}
-        <p className="text-[11px] text-zinc-500">Estimates. Actual use depends on the model.</p>
       </div>
     </section>
   );

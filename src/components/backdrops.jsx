@@ -1,7 +1,7 @@
 import { MediaCrossfade } from "./motion/MediaCrossfade.jsx";
 import { motionMode, onMotionChange, stop, tween } from "./motion/runtime.js";
-import { useEffect, useRef, useState } from "react";
-import { bgFor, bgSize, useScreen } from "./theme.jsx";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { bgFor, bgSize, bgsForScreen, useScreen } from "./theme.jsx";
 import { LoopVideo, Media } from "./media.jsx";
 import { isVideo } from "../lib/video.js";
 import { useAmbientField } from "./motion/ambient.js";
@@ -55,14 +55,18 @@ export function FramedImage({ src, scale = 1, nx = 0, ny = 0, start, end, active
    otherwise show a thin, blown-up strip of it. */
 const FIT_BEYOND = 1.5;
 
-export function ChatBackdrop({ list, seconds }) {
+export function ChatBackdrop({ list: all, seconds, desktopOnly = false }) {
   const vp = useScreen();
+  /* only the pictures framed for this screen's shape (theme.jsx) */
+  const portrait = vp.w < vp.h;
+  const list = useMemo(() => bgsForScreen(all, portrait ? { w: 1, h: 2 } : { w: 2, h: 1 }, desktopOnly), [all, portrait, desktopOnly]);
   /* the one showing, and the one fading out under it (-1 when none) */
   const [{ i, prev }, setShow] = useState({ i: 0, prev: -1 });
   const layers = useRef(null);
   useEffect(() => {
-    if (list.length < 2) return;
+    /* from the first again whenever the list changes length, down to one too */
     setShow({ i: 0, prev: -1 });
+    if (list.length < 2) return;
     const ms = Math.max(5, Number(seconds) || 20) * 1000;
     const t = setInterval(() => setShow((s) => ({ i: (s.i + 1) % list.length, prev: s.i })), ms);
     return () => clearInterval(t);

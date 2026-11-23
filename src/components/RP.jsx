@@ -7,7 +7,7 @@ import { displayHtml } from "../lib/html.js";
 export const RP = React.memo(function RP({ text, display, role = "assistant", depth = 0 }) {
   if (display?.length) {
     const html = displayHtml(text, display, role, depth);
-    if (html != null) return <div className="nv-html" dangerouslySetInnerHTML={{ __html: html }} />;
+    if (html != null) return <div className="nv-html nv-pv" dangerouslySetInnerHTML={{ __html: html }} />;
   }
   const parts = tidyRP(hideNotes(text)).split(RP_SPAN).filter(Boolean);
   return parts.map((p, i) => {

@@ -87,6 +87,15 @@ $("autostart").onclick = async () => {
   const want = $("autostart").getAttribute("aria-checked") !== "true";
   try { showAutostart(await bridge.autostart(want)); } catch (e) { say(e.message); }
 };
+/* Keep running in the tray: on unless turned off here */
+const trayNote = (on) => (on ? "On: closing the window hides it; the Bridge keeps running." : "Off: closing the window stops the Bridge.");
+const showTray = (on) => { $("tray").setAttribute("aria-checked", String(!!on)); $("tray-note").textContent = trayNote(on); };
+if (bridge.tray) bridge.tray().then(showTray).catch(() => { $("tray").closest(".row").hidden = true; });
+else $("tray").closest(".row").hidden = true;
+$("tray").onclick = async () => {
+  const want = $("tray").getAttribute("aria-checked") !== "true";
+  try { showTray(await bridge.tray(want)); } catch (e) { say(e.message); }
+};
 $("wifi-copy").onclick = async () => {
   const b = $("wifi-copy");
   try { await navigator.clipboard.writeText($("wifi-addr").textContent); b.textContent = "Copied"; }

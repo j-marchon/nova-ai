@@ -145,6 +145,9 @@ body { margin: 0; background: var(--nv-bg); }
 .nv-sheet { border-radius: var(--nv-r-sheet) var(--nv-r-sheet) 0 0; max-height: calc(100dvh / var(--nv-ui-scale) - var(--sa-t) - 3rem); }
 .nv-sheet[data-full="1"] { height: calc(100dvh / var(--nv-ui-scale)); max-height: calc(100dvh / var(--nv-ui-scale)); border-radius: 0; }
 @media(min-width:640px) { .nv-sheet:not([data-full="1"]) { max-height: calc(80dvh / var(--nv-ui-scale)); border-radius: var(--nv-r-sheet); } }
+/* a sheet with tabs keeps one size (Modal `fixed`); its content scrolls */
+.nv-sheet[data-fixed="1"]:not([data-full="1"]) { height: calc(88dvh / var(--nv-ui-scale)); }
+@media(min-width:640px) { .nv-sheet[data-fixed="1"]:not([data-full="1"]) { height: min(calc(80dvh / var(--nv-ui-scale)), 680px); } }
 .nv-screen { background: var(--nv-bg); }
 .nv-collapse { display: grid; grid-template-rows: 0fr; }
 .nv-collapse[data-open="1"] { grid-template-rows: 1fr; }
@@ -164,6 +167,8 @@ body { margin: 0; background: var(--nv-bg); }
 .nv-scope-label { display: inline-block; overflow: hidden; }
 .nv-scope-glow, .nv-flow, .nv-fx-grain { display: none; }
 .nv-html { overflow-wrap: anywhere; }
+/* a preset's own HTML (lib/html.js): its pop-ups position against the bubble */
+.nv-pv { position: relative; isolation: isolate; }
 .nv-html details > summary { cursor: pointer; }
 .nv-html a { text-decoration: underline; }
 .nv-html table { display: block; max-width: 100%; overflow-x: auto; }
@@ -543,6 +548,49 @@ html[data-skin="minimal"] .nv-root { --nv-shadow: none; --nv-lamp-line: transpar
 /* a chat over the scene: see-through, without its own grid and grain */
 .nv-root[data-scene="1"] .nv-chat-root { background: transparent !important; }
 .nv-root[data-scene="1"] .nv-chat-root > .absolute > .nv-texture { display: none; }
+
+/* ---------- Look → Skin in chats off (ChatPage `plain`) ----------
+   The skin stays on the rail, the chat list, the sheets and the phone; the
+   chat itself is a solid black or white page (a chat's own background
+   picture still shows) and its header, messages and message box wear Nova's
+   plain look. [data-theme] on those parts brings back Nova's base tokens;
+   what .nv-root and .nv-chat-root derive from them is named again here, and
+   what a skin draws over the chat's own parts is taken off. */
+:root .nv-root .nv-chat-root.nv-chat-root[data-plain="dark"] { background: oklch(0 0 0) !important; }
+:root .nv-root .nv-chat-root.nv-chat-root[data-plain="light"] { background: oklch(1 0 0) !important; }
+.nv-root .nv-chat-root .nv-plain {
+  --nv-control-edge: var(--nv-chat-edge); --nv-control: var(--nv-chat-control); --nv-pane: var(--nv-chat-panel);
+  --nv-line: var(--nv-hairline); --nv-line-strong: var(--nv-hairline-strong); --nv-shadow: none;
+  --nv-edge-ink: color-mix(in oklch, var(--nv-ink) 42%, transparent);
+  --color-zinc-50: var(--nv-ink); --color-zinc-100: var(--nv-ink); --color-zinc-200: var(--nv-ink); --color-zinc-300: var(--nv-ink);
+  --color-zinc-400: var(--nv-muted); --color-zinc-500: var(--nv-muted); --color-zinc-600: var(--nv-muted);
+  --color-zinc-700: var(--nv-chat-control); --color-zinc-800: var(--nv-chat-control); --color-zinc-900: var(--nv-chat-control); --color-zinc-950: var(--nv-bg);
+  --nv-r-control: 14px; --nv-r-card: 18px; --nv-r-block: 22px; --nv-r-panel: 28px; --nv-r-sheet: 28px;
+  --nv-font: "Overused Grotesk", var(--nv-system);
+  font-family: var(--nv-font); color: var(--nv-ink); caret-color: var(--nv-ink);
+}
+:root[data-skin] .nv-root .nv-chat-root .nv-plain :where(button) { font-weight: inherit; }
+:root[data-skin] .nv-root .nv-chat-root .nv-plain :is(.nv-label, .nv-msg-label) { color: var(--nv-muted); text-transform: uppercase; font-size: 10.5px; letter-spacing: .2em; font-weight: 500; }
+:root[data-skin] .nv-root .nv-chat-root .nv-plain .nv-msg-label { font-size: 11px; letter-spacing: .14em; }
+:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain :is(.nv-msg, .nv-composer, .nv-composer-island, .nv-edit-box, .nv-composer-tools > button, .nv-btn--secondary, .nv-btn--danger, .nv-hair, .nv-glass, .nv-card, .nv-block, .nv-surface) {
+  box-shadow: none !important; background-image: none !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; text-shadow: none;
+}
+:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain .nv-chat-messages .nv-msg { border-color: transparent !important; }
+:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain :is(.nv-glass, .nv-card, .nv-block, .nv-surface) { border-color: var(--nv-line) !important; }
+:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain .nv-composer { background-color: var(--nv-chat-panel) !important; border: 1px solid var(--nv-chat-edge) !important; }
+:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain .nv-composer-island { background: color-mix(in oklab, var(--nv-ink) 3%, transparent); border-color: var(--nv-line); }
+:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain .nv-composer-tools > button:not(.nv-btn--primary) { background: var(--nv-control) !important; border: 1px solid var(--nv-control-edge) !important; color: var(--nv-ink) !important; }
+:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain ::placeholder { color: var(--nv-faint); }
+:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain .nv-island-btn[data-active="1"] { color: var(--nv-ink); }
+:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain .nv-island-btn > .nv-ico { filter: none; }
+:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain .nv-edit-box { background: var(--nv-pane-base); border-color: var(--nv-edge-ink) !important; }
+:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain :is(.nv-btn--primary, .nv-primary) { background: var(--acc); color: var(--on-acc); border: 1px solid var(--acc) !important; box-shadow: none !important; text-shadow: none; filter: none; }
+:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain .nv-btn--secondary { background: transparent; border-color: var(--nv-line) !important; }
+:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain :is(.nv-btn--ghost, .nv-btn--icon, .nv-btn--secondary):hover:not(:disabled) { background: var(--nv-control); }
+:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain :is([data-inverted="1"], [style*="background: var(--nv-ink)"]) { --nv-bg: inherit; background: var(--nv-ink) !important; color: var(--nv-bg) !important; border-color: var(--nv-ink) !important; box-shadow: none !important; }
+:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain :where(input, textarea, [contenteditable]) { caret-color: var(--nv-ink); }
+:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain :where(:focus-visible) { outline-color: var(--nv-ink); }
+:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain ::selection { background: color-mix(in oklch, var(--nv-ink) 22%, transparent); color: inherit; }
 /* the effects over the layers */
 .nv-scene-glint {
   position: absolute; opacity: 0; will-change: transform, opacity;
@@ -586,6 +634,31 @@ html[data-skin="minimal"] .nv-root { --nv-shadow: none; --nv-lamp-line: transpar
   }
 }
 
+/* While a chat is open on a wide window the chat list is a drawer over it,
+   closed whenever a chat opens; the chat keeps its place (transform and
+   opacity only). */
+.nv-drawer-scrim { display: none; }
+@media (min-width: 1024px) {
+  .nv-root[data-drawer] { --nv-split: clamp(320px, 26vw, 400px); }
+  .nv-root[data-drawer] .nv-tab-history {
+    position: fixed; top: 0; bottom: 0; left: calc(var(--nv-rail) + var(--sa-l)); width: var(--nv-split);
+    overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; z-index: 60;
+    background: var(--nv-pane-base, oklch(.12 0 0)); box-shadow: 1px 0 0 var(--nv-line);
+    transform: translateX(-24px); opacity: 0; visibility: hidden; pointer-events: none;
+    transition: transform .42s cubic-bezier(.22, 1, .36, 1), opacity .3s ease, visibility 0s linear .42s;
+  }
+  .nv-root[data-drawer="open"] .nv-tab-history { transform: none; opacity: 1; visibility: visible; pointer-events: auto; transition-delay: 0s; }
+  .nv-root[data-drawer] .nv-chat-root { left: calc(var(--nv-rail) + var(--sa-l)); }
+  .nv-root[data-drawer] .nv-tab-history .nv-page-wrap { padding: 0 18px 2rem; max-width: none; }
+  .nv-root[data-drawer] .nv-tab-history .nv-row[data-on="1"] { background: var(--nv-control); }
+  .nv-root[data-drawer] .nv-drawer-scrim {
+    display: block; position: fixed; inset: 0 0 0 calc(var(--nv-rail) + var(--sa-l)); z-index: 55; background: oklch(0 0 0 / .45);
+    opacity: 0; pointer-events: none; transition: opacity .3s ease;
+  }
+  .nv-root[data-drawer="open"] .nv-drawer-scrim { opacity: 1; pointer-events: auto; }
+}
+.nv-root[data-motion="off"][data-drawer] .nv-tab-history, .nv-root[data-motion="off"] .nv-drawer-scrim { transition: none !important; }
+
 /* ---------- pages ---------- */
 .nv-page-wrap { margin: 0 auto; padding: 0 16px 9rem; }
 @media (min-width: 640px) { .nv-page-wrap { padding-left: 28px; padding-right: 28px; } }
@@ -608,6 +681,10 @@ html[data-skin="minimal"] .nv-root { --nv-shadow: none; --nv-lamp-line: transpar
 
 /* list rows (chats, personas, lorebooks) */
 .nv-row { position: relative; display: flex; align-items: center; gap: 14px; min-height: 76px; padding: 12px 6px 12px 0; cursor: pointer; }
+/* a Nova Scope chat (several people): a wash and an edge in the skin's accent */
+.nv-row[data-scope="1"] { padding-left: 14px; border-radius: var(--nv-r-control, 14px); background: linear-gradient(100deg, color-mix(in oklab, var(--acc, #fff) 9%, transparent), color-mix(in oklab, var(--acc, #fff) 2%, transparent) 70%, transparent); box-shadow: inset 2px 0 0 color-mix(in oklab, var(--acc, #fff) 55%, transparent); }
+.nv-row[data-scope="1"]:hover { background: linear-gradient(100deg, color-mix(in oklab, var(--acc, #fff) 14%, transparent), color-mix(in oklab, var(--acc, #fff) 4%, transparent) 70%, transparent); }
+.nv-row[data-scope="1"] .nv-hair[role="img"] { box-shadow: 0 0 0 2px color-mix(in oklab, var(--acc, #fff) 35%, transparent); }
 
 /* ---------- chat ---------- */
 .nv-chat-head { border-bottom: 1px solid var(--nv-line) !important; }
@@ -618,7 +695,30 @@ html[data-skin="minimal"] .nv-root { --nv-shadow: none; --nv-lamp-line: transpar
 .nv-root .nv-msg-edit { outline: none; }
 .nv-edit-box { width: 100%; border: 1px solid var(--nv-edge-ink) !important; border-radius: var(--nv-r-card); background: var(--nv-pane-base); }
 .nv-edit-box textarea { display: block; width: 100%; border: 0 !important; background: transparent !important; resize: none; outline: none; padding: 12px 14px; font-size: 15px; line-height: 1.6; min-height: 72px; border-radius: var(--nv-r-card); }
-.nv-edit-bar { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 14px; border-top: 1px solid var(--nv-line) !important; }
+.nv-edit-bar { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 14px; min-height: 44px; border-top: 1px solid var(--nv-line) !important; }
+.nv-edit-tip { font-size: 11.5px; line-height: 1.3; color: var(--nv-faint); }
+@media (max-width: 639px) { .nv-edit-bar { padding-right: 14px; } }
+/* The edit's floating confirm on a phone: a green check and a red cross on
+   a small pill above the line being edited. The one place outside deleting
+   where the chat shows colour, asked for so the two read at a glance.
+   Dark: bright fills, black glyphs; light: deep fills, white glyphs; each
+   pair at least 4.5:1. */
+.nv-root { --nv-ok: oklch(0.78 0.16 150); --nv-on-ok: oklch(0 0 0); --nv-no: oklch(0.72 0.16 25); --nv-on-no: oklch(0 0 0); }
+.nv-root[data-theme="light"] { --nv-ok: oklch(0.52 0.14 150); --nv-on-ok: oklch(1 0 0); --nv-no: oklch(0.52 0.2 27); --nv-on-no: oklch(1 0 0); }
+.nv-edit-float { position: fixed; z-index: 60; display: flex; align-items: center; gap: 8px; padding: 4px; border-radius: 999px; background: var(--nv-pane-base); border: 1px solid var(--nv-line-strong); }
+.nv-root .nv-edit-float .nv-btn { --nv-btn-h: 44px; width: 44px; min-width: 44px; padding: 0; border-radius: 999px; border: 0 !important; }
+.nv-root .nv-edit-float .nv-btn.nv-edit-yes { background: var(--nv-ok) !important; color: var(--nv-on-ok) !important; }
+.nv-root .nv-edit-float .nv-btn.nv-edit-no { background: var(--nv-no) !important; color: var(--nv-on-no) !important; }
+.nv-root .nv-edit-float .nv-btn .nv-btn-icon { width: 19px; height: 19px; stroke-width: 2.6; }
+/* Aero: the same pair as glossy gel, deep enough for white glyphs */
+:root[data-skin="aero"] .nv-root .nv-edit-float { --nv-ok: oklch(0.5 0.14 150); --nv-on-ok: oklch(1 0 0); --nv-no: oklch(0.5 0.18 25); --nv-on-no: oklch(1 0 0); background: oklch(1 0 0 / .9); border-color: oklch(1 0 0 / .9); box-shadow: 0 8px 20px -10px oklch(0.3 0.13 245 / .55); }
+:root[data-skin="aero"] .nv-root .nv-edit-float .nv-btn.nv-edit-yes,
+:root[data-skin="aero"] .nv-root .nv-edit-float .nv-btn.nv-edit-no { background-image: linear-gradient(180deg, oklch(1 0 0 / .4), oklch(1 0 0 / .08) 48%, transparent 52%) !important; box-shadow: inset 0 1px 0 oklch(1 0 0 / .6) !important; }
+/* the overlap pop-up's "all chats" check: a small box, filled when on */
+.nv-scope-box { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 5px; border: 1.5px solid; flex: none; }
+.nv-root .nv-scope-box { border-color: var(--nv-muted) !important; }
+.nv-scope-check[data-on="1"] { color: var(--nv-ink); }
+.nv-root .nv-scope-check[data-on="1"] .nv-scope-box { background: var(--nv-ink); border-color: var(--nv-ink) !important; color: var(--nv-bg); }
 /* Import shows its word only where the row has room */
 .nv-root .nv-import { padding: 0; width: var(--nv-btn-h); }
 .nv-import-label { display: none; }
@@ -642,7 +742,7 @@ html[data-skin="minimal"] .nv-root { --nv-shadow: none; --nv-lamp-line: transpar
 }
 .nv-row-tools { visibility: hidden; }
 .nv-bubble:hover .nv-row-tools, .nv-bubble:focus-within .nv-row-tools { visibility: visible; }
-@media (pointer: coarse) { .nv-row-tools { display: none !important; } .nv-edit-hint { display: none; } }
+@media (pointer: coarse) { .nv-row-tools { display: none !important; } }
 .nv-root .nv-row-tools .nv-btn { --nv-btn-h: 26px; }
 .nv-root .nv-msg-head .nv-row-tools button { min-height: 26px; min-width: 26px; }
 
@@ -690,10 +790,8 @@ html[data-skin="minimal"] .nv-root { --nv-shadow: none; --nv-lamp-line: transpar
 .nv-ios-close:hover { background: oklch(0.575 0.012 286 / .4); }
 @media (min-width: 480px) {
   .nv-ios-device { border-radius: 54px; border: 11px solid oklch(0.115 0 0) !important; box-shadow: 0 0 0 1.5px oklch(1 0 0 / .14), 0 40px 120px oklch(0 0 0 / .6) !important; }
-  .nv-ios-device > .nv-ios-bar { margin-top: 30px !important; }
-  .nv-ios-island { position: absolute; top: 9px; left: 50%; width: 112px; height: 32px; margin-left: -56px; border-radius: 20px; background: oklch(0 0 0); z-index: 5; pointer-events: none; }
+  .nv-ios-device > .nv-ios-bar { margin-top: 12px !important; }
 }
-.nv-ios-island { box-shadow: 0 0 0 1px oklch(1 0 0 / .07) !important; }
 [data-testid="phone"] textarea { scrollbar-width: none; }
 [data-testid="phone"] textarea::-webkit-scrollbar { display: none; }
 
@@ -703,6 +801,12 @@ html[data-skin="minimal"] .nv-root { --nv-shadow: none; --nv-lamp-line: transpar
   .nv-settings-stage { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
   .nv-settings-stage > * { margin: 0 !important; }
   .nv-settings-stage > :only-child, .nv-settings-stage > .nv-settings-stage { grid-column: 1 / -1; }
+  /* Look: the skin column stops growing (its pictures would only get
+     taller), so it stays as tall as the blocks beside it */
+  .nv-look-stage { grid-template-columns: minmax(0, min(450px, calc(50% - 6px))) minmax(0, 1fr); }
+  /* Replies: blocks of changing height flow down two balanced columns, in order */
+  .nv-settings-flow { display: block; columns: 2; column-gap: 12px; }
+  .nv-settings-flow > * { break-inside: avoid; margin: 0 0 12px !important; }
 }
 
 /* ---------- launch splash (components/Splash.jsx) ----------
@@ -820,3 +924,11 @@ html[data-skin="minimal"] .nv-root { --nv-shadow: none; --nv-lamp-line: transpar
    (a classic scrollbar used to shift the page and the dock 15px between
    them); overlay scrollbars on phones take no room either way */
 :root:not([data-skin]) { scrollbar-gutter: stable; }
+
+/* the phone's top row while something is being written: a dot that breathes and sends a ring out */
+.nv-live-ring { background: var(--nv-ink); opacity: 0; animation: nv-live-ping 1.4s cubic-bezier(.22, 1, .36, 1) infinite; }
+.nv-live > span:last-child { animation: nv-live-beat 1.4s ease-in-out infinite; }
+@keyframes nv-live-ping { 0% { transform: scale(1); opacity: .55; } 80%, 100% { transform: scale(3); opacity: 0; } }
+@keyframes nv-live-beat { 0%, 100% { transform: scale(1); } 40% { transform: scale(1.18); } }
+.nv-root[data-motion="off"] .nv-live-ring, .nv-root[data-motion="off"] .nv-live > span:last-child, .nv-root[data-motion="calm"] .nv-live-ring { animation: none; }
+@media (prefers-reduced-motion: reduce) { .nv-live-ring, .nv-live > span:last-child { animation: none; } }

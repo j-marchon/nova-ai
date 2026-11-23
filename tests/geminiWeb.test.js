@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { GeminiWebError, GeminiWebSession, cookieHeader, modelHeaders, parseCookieInput } from "../bridge/gemini-web.mjs";
+import { GeminiWebError, GeminiWebSession, appModelHeader, cookieHeader, modelHeaders, parseCookieInput, parseGeminiModelList } from "../bridge/gemini-web.mjs";
 
 /* The bridge reads its sign-ins at import: an empty home and a throwaway store. */
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "nova-gemini-test-"));
@@ -24,18 +24,49 @@ const snapAs = (text, model) => frame([null, ["c_1", "r_1"], null, null, [["rc_1
 const errorFrame = (code) => JSON.stringify([["wrb.fr", null, null, null, null, [3, null, [[code]]]]]);
 const PAGE = `<html>${"x".repeat(2500)} "SNlM0e":"page-token" "cfb2h":"boq_build" "FdrFJe":"-123456" </html>`;
 
+/* The app's model list (batchexecute otAQ7b), trimmed from a live Pro
+   account's answer (Nov 2026): [24] is [policy, entries], an entry
+   [info, levels, _, surfaces]. Surface [1] is the picker; [2] repeats models
+   for another screen. 4 Carbon carries the upgrade marker (info[14]). */
+const LEVELS = [[1, "Low", "Fast and efficient"], [4, "Medium", "Balanced depth"], [2, "High", "Extra thorough"]];
+const entry = (mode, short, long, desc, levels, surfaces, upsell = null) =>
+  [["", mode, false, null, short, long, null, false, null, null, false, null, desc, [2, 140], upsell, levels.length > 1 ? 2 : 1], levels, null, surfaces];
+const MODEL_LIST = (() => {
+  const inner = Array(25).fill(null);
+  inner[24] = ["neon_pro_policy", [
+    [["", 6, false, null, "Auto", "Adapts to your needs", null, false, null, null, false, null, "Auto", [2, 140], null, 1], null, 1, [1]],
+    entry(1, "4 Hydrogen", "4 Hydrogen", "Everyday help", LEVELS, [1]),
+    entry(1, "4 Hydrogen", "4 Hydrogen", "Everyday help", [[1, "Standard"]], [2]),
+    entry(3, "Neon", "4 Neon", "Deeper analysis", LEVELS, [1]),
+    entry(8, "Carbon", "4 Carbon", "Complex tasks", [[1, "Standard"]], [1], [1, "gemini-4-carbon"]),
+    entry(8, "Carbon", "4 Carbon", "Complex tasks", [[1, "Standard"]], [2], [1, "gemini-4-carbon"]),
+  ]];
+  return wire(JSON.stringify([["wrb.fr", "otAQ7b", JSON.stringify(inner), null, null, null, "generic"]]));
+})();
+const DELETED = wire(JSON.stringify([["wrb.fr", "GzXR5e", "[]", null, null, null, "generic"]]));
+
 function fakeGoogle() {
   const g = {
     log: [],
     page: { status: 200, headers: {}, body: PAGE },
     stream: () => ({ status: 200, headers: {}, body: wire(snap("Hel"), snap("Hello there")) }),
     rotate: () => ({ status: 200, headers: { "set-cookie": ["__Secure-1PSIDTS=rotated; Path=/; Secure; HttpOnly"] }, body: "" }),
+    models: () => ({ status: 200, headers: {}, body: MODEL_LIST }),
+    deleted: [],
   };
   g.request = async (o) => {
     g.log.push(o);
     const u = new URL(o.url);
     if (u.pathname.endsWith("/app")) return g.page;
     if (u.pathname === "/RotateCookies") return g.rotate(o);
+    if (u.pathname.endsWith("/batchexecute")) {
+      const rpc = u.searchParams.get("rpcids");
+      if (rpc === "otAQ7b") return g.models(o);
+      if (rpc === "GzXR5e") {
+        g.deleted.push(JSON.parse(JSON.parse(new URLSearchParams(o.body).get("f.req"))[0][0][1])[0]);
+        return { status: 200, headers: {}, body: DELETED };
+      }
+    }
     if (u.pathname.endsWith("/StreamGenerate")) {
       const r = g.stream(o);
       if (r.status < 400) {
@@ -78,6 +109,24 @@ describe("Gemini app client (gemini-web.mjs)", () => {
     expect(modelHeaders("")).toEqual({});
     expect(modelHeaders("95a4c0abcba24364")).toEqual({ "x-goog-ext-525001261-jspb": '[1,null,null,null,"95a4c0abcba24364",null,null,0,[4]]' });
     expect(modelHeaders("[1,null,null,null,\"zz\"]")["x-goog-ext-525001261-jspb"]).toBe('[1,null,null,null,"zz"]');
+  });
+
+  it("reads the app's picker: one row per thinking level, locked models marked, other screens left out", () => {
+    const rows = parseGeminiModelList(MODEL_LIST);
+    expect(rows.map((m) => [m.slug, m.name, m.locked])).toEqual([
+      ["auto", "Auto", false],
+      ["4-hydrogen-low", "4 Hydrogen (Low)", false],
+      ["4-hydrogen-medium", "4 Hydrogen (Medium)", false],
+      ["4-hydrogen-high", "4 Hydrogen (High)", false],
+      ["4-neon-low", "4 Neon (Low)", false],
+      ["4-neon-medium", "4 Neon (Medium)", false],
+      ["4-neon-high", "4 Neon (High)", false],
+      ["4-carbon", "4 Carbon", true],
+    ]);
+    /* the model by its mode and level at 14 and 15, as the app sends it */
+    expect(JSON.parse(rows.find((m) => m.slug === "4-hydrogen-medium").header).slice(14)).toEqual([1, 4]);
+    expect(JSON.parse(rows.find((m) => m.slug === "auto").header).slice(14)).toEqual([6, null]);
+    expect(parseGeminiModelList(")]}'\n\n12\n[[\"e\",4]]\n")).toBeNull();
   });
 
   it("needs the __Secure-1PSID cookie", () => {
@@ -155,6 +204,26 @@ describe("Gemini app client (gemini-web.mjs)", () => {
       g.stream = () => ({ status: 429, headers: {}, body: "" });
       await expect(new GeminiWebSession({ cookies: COOKIES, request: g.request }).stream({ prompt: "hi" })).rejects.toMatchObject({ status: 429 });
       expect(g.log.filter((o) => o.method === "POST" && o.url.includes("StreamGenerate")).length).toBe(1);
+    });
+
+    it("asks the app for its models with the app's own client header", async () => {
+      const g = fakeGoogle();
+      const models = await new GeminiWebSession({ cookies: COOKIES, request: g.request }).listModels();
+      expect(models.map((m) => m.slug)).toContain("4-carbon");
+      const call = g.log.find((o) => o.url.includes("rpcids=otAQ7b"));
+      expect(call.headers["x-goog-ext-525001261-jspb"]).toBe(appModelHeader());
+      expect(JSON.parse(new URLSearchParams(call.body).get("f.req"))).toEqual([[["otAQ7b", "[1]", null, "generic"]]]);
+    });
+
+    it("deletes a chat, and says so only when the app's delete answered", async () => {
+      const g = fakeGoogle();
+      const s = new GeminiWebSession({ cookies: COOKIES, request: g.request });
+      await s.init();
+      expect(await s.deleteChat("abc123")).toBe(true);
+      expect(g.deleted).toEqual(["c_abc123"]);
+      const real = g.request;
+      s.request = async (o) => (o.url.includes("GzXR5e") ? { status: 200, headers: {}, body: wire(JSON.stringify([["er", null, null, null, null, 400]])) } : real(o));
+      expect(await s.deleteChat("c_abc123")).toBe(false);
     });
 
     it("turns an error code inside a 200 answer into an error", async () => {
@@ -237,16 +306,17 @@ describe("Gemini app in Nova Bridge", () => {
     expect(fs.statSync(process.env.NOVA_BRIDGE_AUTH_FILE).mode & 0o077).toBe(0);
   });
 
-  it("lists the default model and the known ones", async () => {
+  it("lists exactly the models the app's picker offers, then the default", async () => {
     const d = await (await fetch(`${base}/v1/models`, { headers: AUTH })).json();
-    const ids = d.data.map((m) => m.id);
-    expect(ids).toEqual(expect.arrayContaining(["gemini-web/default", "gemini-web/gemini-4-argon"]));
-    expect(d.data.find((m) => m.id === "gemini-web/default")).toMatchObject({ name: "Account default (Gemini app)", pricing: { prompt: "0", completion: "0" } });
+    const rows = d.data.filter((m) => m.id.startsWith("gemini-web/"));
+    expect(rows.map((m) => m.id).sort()).toEqual(["auto", "4-hydrogen-low", "4-hydrogen-medium", "4-hydrogen-high", "4-neon-low", "4-neon-medium", "4-neon-high", "4-carbon", "default"].map((x) => `gemini-web/${x}`).sort());
+    expect(rows.find((m) => m.id === "gemini-web/4-carbon").name).toBe("4 Carbon, not on this plan (Gemini app)");
+    expect(rows.find((m) => m.id === "gemini-web/default")).toMatchObject({ name: "Gemini app default (Gemini app)", pricing: { prompt: "0", completion: "0" } });
   });
 
   it("streams a reply, framing the system prompt in text and naming the model by header", async () => {
     g.log.length = 0;
-    const r = await chat({ model: "gemini-web/gemini-4-argon", stream: true, messages });
+    const r = await chat({ model: "gemini-web/4-neon-high", stream: true, messages });
     expect(r.status).toBe(200);
     const text = await r.text();
     const deltas = [...text.matchAll(/"content":"([^"]*)"/g)].map((m) => m[1]);
@@ -258,7 +328,14 @@ describe("Gemini app in Nova Bridge", () => {
     const prompt = JSON.parse(JSON.parse(new URLSearchParams(post.body).get("f.req"))[1])[0][0];
     expect(prompt).toContain("<instructions>\nYou are Mira.\n</instructions>");
     expect(prompt).toContain("<user>\nWho are you?\n</user>");
-    expect(post.headers["x-goog-ext-525001261-jspb"]).toContain("95a4c0abcba24364");
+    expect(post.headers["x-goog-ext-525001261-jspb"]).toBe(appModelHeader(3, 2));
+  });
+
+  it("deletes each chat from the Gemini history after its reply", async () => {
+    g.deleted.length = 0;
+    expect((await chat({ model: "gemini-web/default", messages })).status).toBe(200);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(g.deleted).toEqual(["c_1"]);
   });
 
   it("sends no model header for the account default, and answers without streaming", async () => {
@@ -270,13 +347,15 @@ describe("Gemini app in Nova Bridge", () => {
     expect(post.headers["x-goog-ext-525001261-jspb"]).toBeUndefined();
   });
 
-  it("sends a bare Argon id to the Gemini app, and shows thoughts as reasoning", async () => {
+  it("sends a bare Argon id to the Gemini app once it is learned, and shows thoughts as reasoning", async () => {
+    await post("/auth/gemini-web/models", { slug: "gemini-4-argon", name: "Gemini 4 Argon", header: "feedfacefeedface" });
     g.stream = () => ({ status: 200, headers: {}, body: wire(snap("Hi", "let me think"), snap("Hi there", "let me think")) });
     const d = await (await chat({ model: "gemini-4-argon", messages })).json();
     expect(d).toMatchObject({ provider: "gemini-web", choices: [{ message: { content: "Hi there", reasoning: "let me think" } }] });
   });
 
   it("warns when the app answers with another model than the one asked for", async () => {
+    await post("/auth/gemini-web/models", { slug: "gemini-4-argon", name: "Gemini 4 Argon", header: "feedfacefeedface" });
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       g.stream = () => ({ status: 200, headers: {}, body: wire(snapAs("Hi", "4 Argon")) });
@@ -300,30 +379,57 @@ describe("Gemini app in Nova Bridge", () => {
     expect((await r.json()).error.message).toMatch(/usage limit/);
   });
 
-  it("stops offering a model Google refuses, until it is learned again", async () => {
-    g.stream = () => ({ status: 200, headers: {}, body: wire(errorFrame(1052)) });
-    expect((await chat({ model: "gemini-web/gemini-4-argon", messages })).status).toBe(404);
-    const ids = (await (await fetch(`${base}/v1/models`, { headers: AUTH })).json()).data.map((m) => m.id);
-    expect(ids).not.toContain("gemini-web/gemini-4-argon");
-    expect(ids).toContain("gemini-web/default");
-    g.stream = () => ({ status: 200, headers: {}, body: wire(snap("Back", ""))});
-    const learned = await post("/auth/gemini-web/models", { slug: "gemini-4-argon", name: "Gemini 4 Argon", header: "feedfacefeedface" });
-    expect(learned.status).toBe(200);
-    g.log.length = 0;
-    expect((await (await chat({ model: "gemini-web/gemini-4-argon", messages })).json()).choices[0].message.content).toBe("Back");
-    const used = g.log.find((o) => o.method === "POST" && o.url.includes("StreamGenerate"));
-    expect(used.headers["x-goog-ext-525001261-jspb"]).toContain("feedfacefeedface");
+  describe("while the app's model list cannot be read", () => {
+    let warn;
+    beforeAll(() => {
+      warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      g.models = () => ({ status: 500, headers: {}, body: "" });
+      bridgeSetGeminiTransport(g.request);
+    });
+    afterAll(() => {
+      g.models = () => ({ status: 200, headers: {}, body: MODEL_LIST });
+      bridgeSetGeminiTransport(g.request);
+      warn.mockRestore();
+    });
+    const listed = async () => (await (await fetch(`${base}/v1/models`, { headers: AUTH })).json()).data.map((m) => m.id).filter((id) => id.startsWith("gemini-web/")).sort();
+
+    it("lists the learned models instead, never built-in ones", async () => {
+      await post("/auth/gemini-web/models", { slug: "hydrogen-4", name: "Hydrogen 4", header: "56fdd199312815e2" });
+      expect(await listed()).toEqual(["gemini-web/default", "gemini-web/gemini-4-argon", "gemini-web/hydrogen-4"]);
+    });
+
+    it("stops offering a learned model Google refuses, until it is learned again", async () => {
+      g.stream = () => ({ status: 200, headers: {}, body: wire(errorFrame(1052)) });
+      expect((await chat({ model: "gemini-web/hydrogen-4", messages })).status).toBe(404);
+      expect(await listed()).toEqual(["gemini-web/default", "gemini-web/gemini-4-argon"]);
+      g.stream = () => ({ status: 200, headers: {}, body: wire(snap("Back", ""))});
+      const learned = await post("/auth/gemini-web/models", { slug: "hydrogen-4", name: "Hydrogen 4", header: "feedfacefeedface" });
+      expect(learned.status).toBe(200);
+      g.log.length = 0;
+      expect((await (await chat({ model: "gemini-web/hydrogen-4", messages })).json()).choices[0].message.content).toBe("Back");
+      const used = g.log.find((o) => o.method === "POST" && o.url.includes("StreamGenerate"));
+      expect(used.headers["x-goog-ext-525001261-jspb"]).toContain("feedfacefeedface");
+    });
+
+    it("learns and forgets models, checking what it is given", async () => {
+      expect((await post("/auth/gemini-web/models", { slug: "x y", header: "feedfacefeedface" })).status).toBe(400);
+      expect((await post("/auth/gemini-web/models", { slug: "gemini-4-flash", header: "not a header" })).status).toBe(400);
+      expect((await post("/auth/gemini-web/models", { slug: "default", header: "feedfacefeedface" })).status).toBe(400);
+      const ok = await (await post("/auth/gemini-web/models", { slug: "gemini-4-flash", name: "Gemini 4 Flash", header: "0123456789abcdef" })).json();
+      expect(ok.models.map((m) => m.id)).toContain("gemini-web/gemini-4-flash");
+      const gone = await (await post("/auth/gemini-web/models", { remove: "gemini-4-flash" })).json();
+      expect(gone.models.map((m) => m.id)).not.toContain("gemini-web/gemini-4-flash");
+      expect((await chat({ model: "gemini-web/gemini-4-flash", messages })).status).toBe(404);
+    });
   });
 
-  it("learns and forgets models, checking what it is given", async () => {
-    expect((await post("/auth/gemini-web/models", { slug: "x y", header: "feedfacefeedface" })).status).toBe(400);
-    expect((await post("/auth/gemini-web/models", { slug: "gemini-4-flash", header: "not a header" })).status).toBe(400);
-    expect((await post("/auth/gemini-web/models", { slug: "default", header: "feedfacefeedface" })).status).toBe(400);
-    const ok = await (await post("/auth/gemini-web/models", { slug: "gemini-4-flash", name: "Gemini 4 Flash", header: "0123456789abcdef" })).json();
-    expect(ok.models.map((m) => m.id)).toContain("gemini-web/gemini-4-flash");
-    const gone = await (await post("/auth/gemini-web/models", { remove: "gemini-4-flash" })).json();
-    expect(gone.models.map((m) => m.id)).not.toContain("gemini-web/gemini-4-flash");
-    expect((await chat({ model: "gemini-web/gemini-4-flash", messages })).status).toBe(404);
+  it("never hides a model the app lists, even after a refusal", async () => {
+    g.stream = () => ({ status: 200, headers: {}, body: wire(errorFrame(1052)) });
+    expect((await chat({ model: "gemini-web/4-carbon", messages })).status).toBe(404);
+    const ids = (await (await fetch(`${base}/v1/models`, { headers: AUTH })).json()).data.map((m) => m.id);
+    expect(ids).toContain("gemini-web/4-carbon");
+    g.stream = () => ({ status: 200, headers: {}, body: wire(snap("Hello there", "")) });
+    expect((await chat({ model: "gemini-web/4-carbon", messages })).status).toBe(200);
   });
 
   it("keeps the rotated cookie in the store", async () => {
@@ -349,10 +455,10 @@ describe("Gemini app in Nova Bridge", () => {
     const before = (await usage()).requests;
     g.stream = () => ({ status: 200, headers: {}, body: wire(snap("Hello there", "")) });
     await chat({ model: "gemini-web/default", messages });
-    await chat({ model: "gemini-web/gemini-4-argon", messages });
+    await chat({ model: "gemini-web/4-neon-low", messages });
     const u = await usage();
     expect(u).toMatchObject({ kind: "counted", requests: before + 2 });
-    expect(u.byModel).toMatchObject({ default: expect.any(Number), "gemini-4-argon": expect.any(Number) });
+    expect(u.byModel).toMatchObject({ default: expect.any(Number), "4-neon-low": expect.any(Number) });
     expect(u.tokensOut).toBeGreaterThan(0);
     expect(Date.parse(u.resetsAt)).toBeGreaterThan(Date.now());
     expect(Date.parse(u.resetsAt) - Date.now()).toBeLessThanOrEqual(86400000);

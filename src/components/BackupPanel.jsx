@@ -2,6 +2,7 @@ import { version } from "../../package.json";
 import { useEffect, useRef, useState } from "react";
 import { Download, Upload } from "lucide-react";
 import { AccBtn, Button, ToggleRow } from "./ui.jsx";
+import { keepDeviceDefaults } from "../lib/data.js";
 import { backupName, backupParts, backupSummary, readBackup } from "../lib/backup.js";
 import { saveFile } from "../lib/cards.js";
 import { cancelWhere } from "../lib/activity.js";
@@ -117,7 +118,7 @@ export function BackupPanel({ data, update }) {
     setNote(null);
     try {
       cancelWhere(() => true);
-      await update(() => pending.state, { durable: true });
+      await update((cur) => keepDeviceDefaults(cur, pending.state, pending.predates), { durable: true });
       /* skins first checked like any file added by hand; this device keeps
          its own, and a newer version of one replaces it */
       const s = await importPacks(pending.skins);

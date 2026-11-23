@@ -85,7 +85,7 @@ export function NotesTab({ text = "", onText, presets, onPresets }) {
 
   return (
     <div className="space-y-4">
-      <Field label="Note">
+      <Field label="Tweak">
         <TextArea
           rows={5}
           value={text}

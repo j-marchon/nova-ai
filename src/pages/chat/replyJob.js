@@ -1,6 +1,6 @@
 import { activeModel, completeText, hasKey, servedElsewhere, sourceOf, streamChat } from "../../lib/api.js";
 import { DEFAULT_HISTORY_TOKENS } from "../../lib/data.js";
-import { addHappening, cleanNote, memoryCovered, memoryDue, parseWorldNote, sceneDue, sceneRequest, sceneWindow, summaryRequest, visibleLog, worldSceneRequest } from "../../lib/memory.js";
+import { addHappening, cleanNote, withChatMemory, memoryCovered, memoryDue, parseWorldNote, sceneDue, sceneRequest, sceneWindow, summaryRequest, visibleLog, worldSceneRequest } from "../../lib/memory.js";
 import { anchorOf } from "../../lib/anchor.js";
 import { phoneAccounts, phoneNote } from "../../lib/phone.js";
 import { messageStamp } from "../../lib/phoneClock.js";
@@ -11,6 +11,8 @@ import { NOT_A_PERSON, cardScanRequest, castMember, describeRequest, ensembleOf,
 import { addSwipe, editMessage } from "../../lib/swipes.js";
 import { hideNotes, joinContinuation, stripTracker, trimToSentence } from "../../lib/text.js";
 import { uid } from "../../lib/util.js";
+import { genParams } from "../../lib/styles.js";
+import { applyRegex } from "../../lib/tavern.js";
 import { activity, activityModelLabel, dismissActivity, runActivity, startActivity } from "../../lib/activity.js";
 import { createStreamStore } from "./streamStore.js";
 
@@ -107,7 +109,9 @@ function chatWork({ getData, update, chatId, stream = createStreamStore(), handl
   const leads = isUni ? universe?.characters || [] : character ? [character] : [];
   const notCast = isUni ? [...leads, universe?.name, ...(universe?.locations || []).map(l => l.name)] : leads;
   const scopeActive = scopeOf(chat).mode !== "off";
-  const scopeSettings = scopeActive && !(data.settings.sceneEvery > 0) ? { ...data.settings, sceneEvery: 2 } : data.settings;
+  /* this chat's own memory switches over the app's (memory.js) */
+  const mine = withChatMemory(data.settings, chat);
+  const scopeSettings = scopeActive && !(mine.sceneEvery > 0) && !chat.memoryOff?.scene ? { ...mine, sceneEvery: 2 } : mine;
   /* who leads the next reply, picked from the cast strip for one reply:
      { name, characterId? } or { narrator: true } */
   const pickedLead = stream.get().opts?.lead || null;
@@ -229,7 +233,7 @@ function chatWork({ getData, update, chatId, stream = createStreamStore(), handl
     /* A model that echoed the scene tracker has it cut back out. Only when
        one was sent: a prompt's own header line in the same [a | b | c]
        shape (SillyTavern presets have one) is not an echo. */
-    const trackerSent = ((scoping ? scopeSettings : data.settings).sceneEvery > 0 || isUni) && chat.scene?.text?.trim();
+    const trackerSent = ((scoping ? scopeSettings : mine).sceneEvery > 0 || isUni) && chat.scene?.text?.trim();
     const scrub = (s) => (trackerSent ? stripTracker(s, chat.scene.text) : s);
 
     let raf = 0;
@@ -257,6 +261,9 @@ function chatWork({ getData, update, chatId, stream = createStreamStore(), handl
        not the one selected, so a substitute is never mistaken for the style
        being ignored. */
     const save = async (text, via) => {
+      /* a preset's scripts that rewrite the reply as it is saved */
+      const rewrite = genParams(scoping ? scopeSettings : mine).saved;
+      if (rewrite?.length) text = applyRegex(text, rewrite, "assistant", 0, { user: userName, char: leadName || character?.name || universe?.name });
       const reply = { id: uid(), role: "assistant", content: text, at: Date.now(),
         ...(leadName ? { speaker: leadName, ...(lead.characterId ? { speakerId: lead.characterId } : {}) } : {}),
         ...(via ? { via } : {}) };
@@ -303,7 +310,7 @@ function chatWork({ getData, update, chatId, stream = createStreamStore(), handl
           character, universe, ensemble, persona,
           memory: chat.memory, scene: chat.scene, lorebooks: books,
           authorsNote: chat.authorsNote,
-          username: data.username, history, settings: scoping ? scopeSettings : data.settings, extra: turnExtra,
+          username: data.username, history, settings: scoping ? scopeSettings : mine, extra: turnExtra,
           scope: scoping
             ? scopeNote({ scope: live, character, universe, ensemble, userName, step: scopeStep, lead })
             : null,
@@ -454,7 +461,7 @@ function chatWork({ getData, update, chatId, stream = createStreamStore(), handl
 
   const runNotes = async (messages, { forceMemory = false, forceScene = false } = {}) => {
     if (notesRef.current || !messages.length) return;
-    const s = data.settings;
+    const s = withChatMemory(data.settings, chatRef.current);
     const current = chatRef.current;
     let mem = s.memoryOn !== false ? memoryDue(messages, s.historyTokens || DEFAULT_HISTORY_TOKENS, current?.memory) : null;
     if (forceMemory) {
@@ -582,7 +589,7 @@ function chatWork({ getData, update, chatId, stream = createStreamStore(), handl
       persona,
       username: userName,
       history,
-      settings: data.settings,
+      settings: mine,
       extra: instruction,
       mode: "impersonate",
       direction: userGuidance,
@@ -664,6 +671,7 @@ function chatWork({ getData, update, chatId, stream = createStreamStore(), handl
         username: data.username,
         history: chatRef.current.messages.slice(0, i + 1),
         settings: scoping ? scopeSettings : data.settings,
+        mode: "continue",
         extra: "[Continue your last message from exactly where it stopped. Do not repeat anything already written; write only the new text.]",
         vars,
         ...ambientOf(chatRef.current.messages.slice(0, i + 1)),

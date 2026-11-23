@@ -26,6 +26,10 @@ const ROOT = packed ? __dirname : path.join(__dirname, "..");
 const BRIDGE_FLAG = "--nova-bridge";
 const bridgeMode = process.argv.includes(BRIDGE_FLAG);
 if (!bridgeMode) app.setName("Nova");
+/* Read aloud: Chromium on Linux speaks only through speech-dispatcher, and only
+   when asked to (otherwise speechSynthesis has no voices and speak() fails with
+   "synthesis-failed"). Needs speech-dispatcher and a voice such as espeak-ng. */
+if (process.platform === "linux") app.commandLine.appendSwitch("enable-speech-dispatcher");
 const NOVA_DIR = packed ? path.join(__dirname, "nova") : path.join(ROOT, "dist");
 const ICON = path.join(NOVA_DIR, "icon-512.png");
 const PORT = Number(process.env.NOVA_DESKTOP_PORT) || 47615;

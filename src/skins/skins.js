@@ -22,7 +22,7 @@ import { installEffects } from "./effects.js";
    restored backup without its skins, a removed skin) shows the standard
    look; the pick itself is kept, so it comes back when the skin is added. */
 
-export const STANDARD = { id: "nova", name: "Nova", note: "The standard look", swatch: "radial-gradient(60% 80% at 70% 45%, oklch(0.75 0 0), oklch(0.18 0 0) 45%, oklch(0 0 0) 80%)" };
+export const STANDARD = { id: "nova", name: "Nova", note: "The standard look", thumb: "skins/nova.webp", loop: "skins/nova-loop.webp", swatch: "radial-gradient(60% 80% at 70% 45%, oklch(0.75 0 0), oklch(0.18 0 0) 45%, oklch(0 0 0) 80%)" };
 /* Nova's own backgrounds: layered night scenes,
    served beside the app at scenes/nova/ */
 const NOVA_SCENE_BASE = () => `${import.meta.env?.BASE_URL || "/"}scenes/nova/`;
@@ -49,8 +49,23 @@ export const isBuiltInSkin = (id) => !!builtIn(id);
 /* where supporters get them: the Ko-fi page */
 export const SUPPORT_URL = "https://ko-fi.com/bjmar";
 export const SUPPORTER_SKINS = [
-  { id: "aero", name: "Aero", note: "Supporter skin", swatch: "linear-gradient(180deg, oklch(0.83 0.08 235), oklch(0.97 0.02 215) 58%, oklch(0.84 0.09 225))", locked: true },
+  { id: "aero", name: "Aero", note: "Supporter skin", thumb: "skins/aero.webp", loop: "skins/aero-loop.webp", swatch: "linear-gradient(180deg, oklch(0.83 0.08 235), oklch(0.97 0.02 215) 58%, oklch(0.84 0.09 225))", locked: true },
 ];
+
+/* A skin's picture in Look → Skin: { still, loop } or null. Nova's and the
+   supporter skins' come with the app (public/skins/, made by
+   from their first scene: Ignition, Skylight
+   Arcade), the same picture whether or not the skin is on this device; any
+   other pack shows its first scene's still once it has loaded. `rev` as
+   for sceneSetOf. */
+const APP_ROOT = () => import.meta.env?.BASE_URL || "/";
+export function skinTileArt(id, rev = 0) {
+  const k = builtIn(id) || SUPPORTER_SKINS.find((x) => x.id === id);
+  if (k?.thumb) return { still: APP_ROOT() + k.thumb, loop: k.loop ? APP_ROOT() + k.loop : null };
+  const set = sceneSetOf(id, rev);
+  const thumb = set?.scenes[0]?.thumb;
+  return thumb ? { still: set.base + thumb, loop: null } : null;
+}
 
 /* Nova and Minimal first, then the added skins in the order they were
    added, then the supporter skins not on this device yet. */

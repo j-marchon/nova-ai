@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Volume2, VolumeX } from "lucide-react";
 import { AccBtn, Field, Slider, ToggleRow, TextInput, inputCls } from "./ui.jsx";
-import { OPENAI_VOICES, getVoices, isSpeaking, sourceOfVoice, speak, speechChoices, speechOptions, stopSpeech } from "../lib/tts.js";
+import { OPENAI_VOICES, getVoices, isSpeaking, loadVoices, sourceOfVoice, speak, speechChoices, speechOptions, speechProblem, stopSpeech } from "../lib/tts.js";
 import { DEFAULT_VOICE_SETTINGS } from "../lib/data.js";
 
 export function VoiceSection({ voiceSettings, providers = [], onChange }) {
@@ -13,19 +13,25 @@ export function VoiceSection({ voiceSettings, providers = [], onChange }) {
   const [voices, setVoices] = useState(() => getVoices());
   const [testing, setTesting] = useState(false);
 
+  const [problem, setProblem] = useState("");
+  const noEngine = source === "system" && typeof window !== "undefined" && (!window.speechSynthesis || typeof window.SpeechSynthesisUtterance === "undefined");
+
   useEffect(() => {
-    const updateVoices = () => {
-      setVoices(getVoices());
-    };
+    let alive = true;
+    const updateVoices = () => { if (alive) setVoices(getVoices()); };
     updateVoices();
-    if (typeof window !== "undefined" && window.speechSynthesis) {
-      window.speechSynthesis.addEventListener?.("voiceschanged", updateVoices);
-      window.speechSynthesis.onvoiceschanged = updateVoices;
-      return () => {
-        window.speechSynthesis.removeEventListener?.("voiceschanged", updateVoices);
-      };
-    }
+    /* the list arrives late on Linux and Android; ask until it is there */
+    loadVoices().then(updateVoices);
+    const synth = typeof window !== "undefined" ? window.speechSynthesis : null;
+    synth?.addEventListener?.("voiceschanged", updateVoices);
+    return () => {
+      alive = false;
+      synth?.removeEventListener?.("voiceschanged", updateVoices);
+    };
   }, []);
+
+  /* espeak-ng lists thousands of "Language+Variant" voices; keep the plain ones */
+  const shownVoices = voices.length > 200 ? voices.filter((v) => !String(v.name).includes("+") || v.name === vs.voice) : voices;
 
   const handleTest = () => {
     if (testing || isSpeaking()) {
@@ -34,6 +40,7 @@ export function VoiceSection({ voiceSettings, providers = [], onChange }) {
       return;
     }
 
+    setProblem("");
     setTesting(true);
     const testSample = vs.dialogueOnly
       ? '"Greetings! I am ready to bring your adventures to life," said the narrator.'
@@ -43,7 +50,7 @@ export function VoiceSection({ voiceSettings, providers = [], onChange }) {
       ...speechOptions(vs, providers),
       onStart: () => setTesting(true),
       onEnd: () => setTesting(false),
-      onError: () => setTesting(false),
+      onError: (err) => { setTesting(false); setProblem(speechProblem(err)); },
     });
   };
 
@@ -77,7 +84,7 @@ export function VoiceSection({ voiceSettings, providers = [], onChange }) {
           className={inputCls + " cursor-pointer"}
         >
           <option value="">Default system voice</option>
-          {voices.map((v) => (
+          {shownVoices.map((v) => (
             <option key={v.voiceURI || v.name} value={v.name}>
               {v.name} {v.lang ? `(${v.lang})` : ""}
             </option>
@@ -120,6 +127,7 @@ export function VoiceSection({ voiceSettings, providers = [], onChange }) {
       >
         {testing ? "Stop preview" : "Test voice"}
       </AccBtn>
+      {(problem || noEngine) && <p role="alert" className="text-[11px] text-red-400 leading-relaxed">{problem || speechProblem()}</p>}
     </div>
   );
 }

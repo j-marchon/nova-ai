@@ -1,55 +1,32 @@
-/* Card Studio engine: prompts, detail levels, coercion and the write. */
+/* Card Studio engine: prompts, interview questions, coercion and the write. */
 import { describe, expect, it, vi } from "vitest";
 import {
-  AI_SCHEMAS, DETAIL_LEVELS, cardSystem, cardUser, coerceCard, coercePart, fullCard, partSystem, partUser,
-  requestOptions, resultFill, writeCard,
+  AI_SCHEMAS, DEFAULT_STUDIO_PROMPT, cardSystem, cardUser, coerceCard, coercePart, fullCard, partSystem, partUser,
+  resultFill, writeCard,
 } from "../src/lib/cardStudio.js";
 import { ModelJsonError } from "../src/lib/json.js";
 
 const KINDS = ["personas", "characters", "universes"];
 
 describe("cardSystem", () => {
-  it.each(KINDS)("%s states the job, the exact contract and the binding brief", (kind) => {
-    const schema = AI_SCHEMAS[kind];
-    const sys = cardSystem(schema);
-    expect(sys).toContain(`You are writing a ${schema.label} card for Nova, a roleplay chat app`);
-    expect(sys).toContain("How the card is used:");
-    expect(sys).toContain("loads your answer straight into the card's fields");
-    expect(sys).toContain("Output contract");
-    for (const f of schema.fields) expect(sys).toContain(`- "${f.key}": ${f.list ? "array of objects (required" : "string (required"}`);
-    expect(sys).toContain(`exactly these keys: ${schema.fields.map((f) => `"${f.key}"`).join(", ")}`);
-    expect(sys).toMatch(/escape a double quote/);
-    expect(sys).toMatch(/line break as \\n/);
-    expect(sys).toContain("The brief decides");
-    expect(sys).toMatch(/not the nearest familiar type/);
-    expect(sys).toMatch(/Where the brief says nothing, the choice is yours, and it should be a specific one/);
+  it.each(KINDS)("%s uses the writing preset with its own output fields", (kind) => {
+    const sys = cardSystem(kind);
+    expect(sys).toContain(DEFAULT_STUDIO_PROMPT);
+    for (const f of AI_SCHEMAS[kind].fields) expect(sys).toContain(JSON.stringify(f.key));
+    expect(sys).not.toMatch(/<plan>|Detail level:/);
+    expect(sys).not.toContain('{"questions":');
   });
 
-  it("asks for planning in reasoning when thinking, and in a <plan> block otherwise", () => {
-    const on = cardSystem(AI_SCHEMAS.characters, { thinking: true });
-    const off = cardSystem(AI_SCHEMAS.characters, { thinking: false });
-    for (const s of [on, off]) {
-      expect(s).toContain("list every requirement it states, one per line");
-      expect(s).toContain("against the list from step 1, line by line");
-    }
-    expect(on).toContain("Do this in your reasoning, before any output");
-    expect(off).toContain("Start your reply with a <plan>…</plan> block");
-    expect(off).toContain("no curly braces");
-    expect(cardUser("characters", "x", { thinking: false })).toContain("your <plan> block, then");
-    expect(cardUser("characters", "x", { thinking: true })).not.toContain("<plan>");
-  });
-
-  it.each(KINDS.flatMap((k) => Object.keys(DETAIL_LEVELS).map((d) => [k, d])))("%s at %s renders its targets", (kind, detail) => {
-    const level = DETAIL_LEVELS[detail];
-    const sys = cardSystem(AI_SCHEMAS[kind], { detail });
-    expect(sys).toContain(`Detail level: ${level.label}`);
-    for (const [key, target] of Object.entries(level.targets[kind])) expect(sys).toContain(`- ${key}: ${target}`);
-    for (const other of Object.values(DETAIL_LEVELS)) if (other !== level) expect(sys).not.toContain(`Detail level: ${other.label}`);
+  it("keeps the template and interview contract when the writer is customized", () => {
+    const sys = cardSystem("characters", { prompt: "Write spare fiction.", interview: true });
+    expect(sys).toContain("Write spare fiction.");
+    expect(sys).not.toContain(DEFAULT_STUDIO_PROMPT);
+    for (const key of ["appearance", "feelings", "shortGoals", "limits", "tags", "scenario", "questions"]) expect(sys).toContain(JSON.stringify(key));
   });
 
   it("puts the brief in a delimited block, with the current card when rewriting", () => {
     const fresh = cardUser(AI_SCHEMAS.personas, "  A keeper.  ");
-    expect(fresh).toMatch(/^<brief>\nA keeper\.\n<\/brief>\n\nReply with the one JSON object/);
+    expect(fresh).toBe("<brief>\nA keeper.\n</brief>");
     const rewrite = cardUser(AI_SCHEMAS.personas, "Older.", { current: { name: "Edda" } });
     expect(rewrite).toContain("<current_card>");
     expect(rewrite).toContain('"name": "Edda"');
@@ -59,21 +36,13 @@ describe("cardSystem", () => {
   });
 
   it("partSystem/partUser contract one key and leave the old part out of the context", () => {
-    const sys = partSystem(AI_SCHEMAS.characters, "tagline", { detail: "high" });
-    expect(sys).toContain('exactly these keys: "tagline"');
-    expect(sys).toContain(`- tagline: ${DETAIL_LEVELS.high.targets.characters.tagline}`);
+    const sys = partSystem(AI_SCHEMAS.characters, "tagline", { prompt: "Keep it spare." });
+    expect(sys).toContain('"tagline": "text"');
+    expect(sys).toContain("Keep it spare.");
+    expect(sys).not.toContain('"greetings"');
     const user = partUser(AI_SCHEMAS.characters, "tagline", "darker", { current: { name: "Edda", tagline: "Old" } });
     expect(user.split("The current")[0]).not.toContain("Old");
     expect(user).toContain("<brief>\ndarker\n</brief>");
-  });
-});
-
-describe("detail levels", () => {
-  it("map to budget and effort, with room for an inline plan", () => {
-    expect(requestOptions("low", true)).toEqual({ maxTokens: 3000, effort: "low" });
-    expect(requestOptions("medium", true)).toEqual({ maxTokens: 8000, effort: "medium" });
-    expect(requestOptions("high", false)).toEqual({ maxTokens: 16000 + DETAIL_LEVELS.high.planTokens, effort: "high" });
-    expect(requestOptions("nonsense", true)).toEqual(requestOptions("medium", true));
   });
 });
 
@@ -82,14 +51,14 @@ describe("coerceCard", () => {
     const { card, missing } = coerceCard("characters", {
       name: "  Edda ", tagline: 42, description: { nested: true },
       greetings: ["*Fog.*", { title: "Night", content: "Who's there?" }, {}, 7],
-      exampleDialogs: ["{{user}}: Hi", "{{char}}: No."], junk: "dropped",
+      exampleDialogs: ["No.", "Only on Tuesdays."], junk: "dropped",
     });
     expect(card).toEqual({
       name: "Edda", tagline: "42",
       greetings: [{ label: "", text: "*Fog.*" }, { label: "Night", text: "Who's there?" }, { label: "", text: "7" }],
-      exampleDialogs: "{{user}}: Hi\n{{char}}: No.",
+      exampleDialogs: "<START>\n{{char}}: No.\n\n<START>\n{{char}}: Only on Tuesdays.",
     });
-    expect(missing).toEqual(["description"]);
+    expect(missing).toEqual(["description", "personality", "scenario"]);
   });
 
   it("keeps extra string fields on universe characters and places, and reads aliases", () => {
@@ -102,6 +71,13 @@ describe("coerceCard", () => {
     expect(card.characters).toEqual([{ name: "Rook", description: "Guard", personality: "", age: "41", secret: "x" }, { name: "Widow", description: "", personality: "" }]);
     expect(card.locations).toEqual([{ name: "Ford", description: "", danger: "Bandits" }]);
     expect(missing).toEqual([]);
+  });
+
+  it("accepts a standard V2 card from a custom writer and preserves the primary greeting", () => {
+    const out = { spec: "chara_card_v2", data: { name: "Mira", first_mes: "First", alternate_greetings: ["Second"],
+      creator_notes: "Read before play", post_history_instructions: "Keep time", mes_example: "<START>\n{{char}}: Yes." } };
+    expect(coerceCard("characters", out).card).toMatchObject({ name: "Mira", creatorNotes: "Read before play",
+      postHistoryInstructions: "Keep time", greetings: [{ text: "First" }, { text: "Second" }] });
   });
 
   it("treats a non-object as an empty card", () => {

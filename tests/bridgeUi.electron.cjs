@@ -16,10 +16,17 @@ if (!process.versions.electron) {
    /* the rounded, frameless window; Nova's own skin first */
    assert.equal(await js('getComputedStyle(document.querySelector(".frame")).borderTopLeftRadius'),'22px');
    assert.equal(await js('document.documentElement.dataset.skin'),'nova');
-   /* nothing but what was asked for: no keys, addresses or models, and one
-      switch, Start with this computer, off until turned on */
+   /* nothing but what was asked for: no keys, addresses or models, and two
+      switches: Start with this computer, off until turned on, and Keep running
+      in the tray, on until turned off */
    assert.equal(await js('document.querySelectorAll("#copy-key, #origins, #addr, #list, input").length'),0);
-   assert.equal(await js('document.querySelectorAll("[role=switch]").length'),1);
+   assert.equal(await js('document.querySelectorAll("[role=switch]").length'),2);
+   await wait('document.querySelector("#tray").getAttribute("aria-checked") === "true"');
+   await js('document.querySelector("#tray").click()');
+   await wait('document.querySelector("#tray").getAttribute("aria-checked") === "false"');
+   assert.equal(await js('(async()=>(await bridge.callsForTest()).some(c=>c[0]==="tray"&&c[1]===false))()'),true);
+   /* the address card sits under the subscriptions */
+   assert.equal(await js('document.querySelector("#subs").closest(".card").nextElementSibling.id'),"wifi-card");
    await wait('document.querySelector("#autostart").getAttribute("aria-checked") === "false"');
    await js('document.querySelector("#autostart").click()');
    await wait('document.querySelector("#autostart").getAttribute("aria-checked") === "true"');

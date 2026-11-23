@@ -707,11 +707,12 @@ const GalleryCard = memo(function GalleryCard({ kind, item, image, name, lastId,
     <div
       data-chat-card
       className="nv-card nv-ticks group relative nv-glass-hover"
-      style={{ contentVisibility: "auto", containIntrinsicSize: wide ? "auto 300px" : big ? "auto 260px" : "auto 170px" }}
+      style={{ contentVisibility: "auto", containIntrinsicSize: wide ? "auto 480px" : big ? "auto 260px" : "auto 170px" }}
     >
-      <div className={`${wide ? "aspect-[4/3]" : "aspect-[3/4]"} relative overflow-hidden rounded-[13px] ${under ? "rounded-b-none" : ""}`} style={{ background: "var(--nv-control-base)" }}>
+      {/* every size is the same 3:4 portrait, scaled: the whole picture shows */}
+      <div className={`aspect-[3/4] relative overflow-hidden rounded-[13px] ${under ? "rounded-b-none" : ""}`} style={{ background: "var(--nv-control-base)" }}>
         {image ? (
-          <Media src={image} alt={name} className={`w-full h-full object-cover ${wide ? "object-top" : ""}`} />
+          <Media src={image} alt={name} className="w-full h-full object-cover" />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
             {kind === "universe" ? <Globe size={26} strokeWidth={1.2} className="text-zinc-600" /> : <User size={26} strokeWidth={1.2} className="text-zinc-600" />}

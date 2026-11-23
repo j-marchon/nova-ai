@@ -2,7 +2,6 @@ import { MotionList } from "../components/motion/MotionList.jsx";
 import { useDeferredValue, useMemo, useRef, useState } from "react";
 import { Download, Globe, MessagesSquare, MoreHorizontal, Play, Search, Trash2, Upload } from "lucide-react";
 import { useLongPress } from "../components/gestures.js";
-import { CastPlus } from "../components/CastPlus.jsx";
 import { CyclingAvatar } from "../components/CyclingAvatar.jsx";
 import { AccBtn, ActionMenu, Avatar, Button, EmptyState, Modal, MoreBtn, TopBar } from "../components/ui.jsx";
 import { ensembleTitle, linkedCards } from "../lib/scope.js";
@@ -61,10 +60,10 @@ export function HistoryPage({ data, update, openChat, activeId = null }) {
     const cast = linked.length ? ensembleTitle([target, ...linked].filter(Boolean)) : "";
     /* a branch, or a group chat, keeps the title it was given, so it can be
        told from its source */
-    /* several characters: the first one's name (or the name the chat was
-       given), the rest behind a + (CastPlus) */
+    /* several characters: every name in a line (cut with … where it does not
+       fit), or the name the chat was given */
     const people = linked.length ? [target, ...linked].filter(Boolean).map((c) => ({ name: c.name, src: c.avatar })) : [];
-    return { isUni, ensemble: linked.length > 0, target, who, people, name: chat.title?.trim() || (linked.length ? who : cast) || who, cast };
+    return { isUni, ensemble: linked.length > 0, target, who, people, name: chat.title?.trim() || cast || who, cast };
   };
 
   /* the list follows the typing a beat behind, so a keystroke is not held
@@ -184,6 +183,7 @@ export function HistoryPage({ data, update, openChat, activeId = null }) {
                 /* skipped by the browser while far off screen */
                 style={{ "--i": Math.min(i, 12), contentVisibility: "auto", containIntrinsicSize: "auto 88px" }}
                 className="nv-rise nv-hold nv-row nv-hair-b group overflow-hidden"
+                data-scope={ensemble ? "1" : undefined}
                 /* the chat open beside the list (a wide window) */
                 data-on={chat.id === activeId ? "1" : undefined}
                 aria-current={chat.id === activeId ? "true" : undefined}
@@ -201,7 +201,6 @@ export function HistoryPage({ data, update, openChat, activeId = null }) {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
                     <p className="text-[17px] font-medium text-zinc-100 truncate tracking-tight">{name}</p>
-                    {ensemble && <CastPlus people={people} />}
                     {isUni && <span className="nv-label shrink-0" style={{ fontSize: 9 }}>Universe</span>}
                   </div>
                   <p className="text-[13px] text-zinc-400 truncate mt-1">

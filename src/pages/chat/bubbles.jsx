@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Check, X } from "lucide-react";
 import { Button } from "../../components/ui.jsx";
 import { keyboardGlide } from "../../components/motion/runtime.js";
-import { toLayout, uiScale } from "../../lib/uiScale.js";
+import { layoutRect, layoutViewport, toLayout, uiScale } from "../../lib/uiScale.js";
 import { RP_SPAN, hideNotes, notesOf, tidyRP } from "../../lib/text.js";
 
 /* The speaker's name over a bubble. A character with no picture has only
@@ -194,6 +195,62 @@ export function EditableBubble({ text, at, className = "", style, onSave, onCanc
      the keyboard drops and the layout jumps before the tap lands */
   const hold = (e) => e.preventDefault();
 
+  /* On a phone the confirm floats just above the line being edited (or the
+     selection, with room for the phone's own copy and paste bar), a green
+     check and a red cross; the bar under the field keeps only the hint. */
+  const phone = usePhoneWidth();
+  const [pos, setPos] = useState(null);
+  useEffect(() => {
+    if (!phone) { setPos(null); return undefined; }
+    const el = ref.current;
+    if (!el) return undefined;
+    let frame = 0;
+    const place = () => {
+      frame = 0;
+      const rect = layoutRect(el.getBoundingClientRect());
+      const start = el.selectionStart ?? 0;
+      const at = caretPoint(el, start);
+      const ranged = el.selectionEnd != null && el.selectionEnd !== start;
+      const view = layoutViewport();
+      const list = el.closest(".nv-chat-messages")?.getBoundingClientRect();
+      const W = 104;
+      const H = 52;
+      const gap = ranged ? 58 : 14;
+      const minTop = (list ? toLayout(list.top) : 0) + 8;
+      const line = rect.top + at.y;
+      const top = Math.max(minTop, line - 12 - H - gap);
+      const left = Math.min(view.width - W - 8, Math.max(8, rect.left + at.x - W / 2));
+      setPos((p) => (p && p.top === top && p.left === left ? p : { top, left }));
+    };
+    const later = () => { if (!frame) frame = requestAnimationFrame(place); };
+    place();
+    const opts = { capture: true, passive: true };
+    document.addEventListener("selectionchange", later);
+    el.addEventListener("select", later);
+    el.addEventListener("input", later);
+    el.addEventListener("keyup", later);
+    el.addEventListener("pointerup", later);
+    window.addEventListener("scroll", later, opts);
+    window.addEventListener("resize", later);
+    window.addEventListener("nova-ui-scale", later);
+    window.addEventListener("nova-kb", later);
+    window.visualViewport?.addEventListener("resize", later);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      document.removeEventListener("selectionchange", later);
+      el.removeEventListener("select", later);
+      el.removeEventListener("input", later);
+      el.removeEventListener("keyup", later);
+      el.removeEventListener("pointerup", later);
+      window.removeEventListener("scroll", later, opts);
+      window.removeEventListener("resize", later);
+      window.removeEventListener("nova-ui-scale", later);
+      window.removeEventListener("nova-kb", later);
+      window.visualViewport?.removeEventListener("resize", later);
+    };
+  }, [phone]);
+  const root = typeof document !== "undefined" ? document.querySelector(".nv-root") || document.body : null;
+
   return (
     <div ref={box} className={`nv-edit-box ${className}`} style={style} onClick={(e) => e.stopPropagation()}>
       <textarea
@@ -210,18 +267,52 @@ export function EditableBubble({ text, at, className = "", style, onSave, onCanc
         style={{ color: "inherit" }}
       />
       <div className="nv-edit-bar">
-        <span className="nv-label flex-1 min-w-0 truncate">Editing<span className="nv-edit-hint"> · Ctrl+Enter saves</span></span>
-        <Button size="sm" variant="ghost" icon={X} onPointerDown={hold} onMouseDown={hold} onClick={onCancel} aria-label="Cancel edit">Cancel</Button>
-        <Button size="sm" variant="primary" icon={Check} onPointerDown={hold} onMouseDown={hold} onClick={save} aria-label="Save edit">Save</Button>
+        <span className="nv-label shrink-0">Editing</span>
+        <span className="nv-edit-tip flex-1 min-w-0 truncate">
+          {phone ? "Double-tap a message to edit it" : "Double-click a message to edit it · Ctrl+Enter saves"}
+        </span>
+        {!phone && (
+          <>
+            <Button size="sm" variant="ghost" icon={X} onPointerDown={hold} onMouseDown={hold} onClick={onCancel} aria-label="Cancel edit">Cancel</Button>
+            <Button size="sm" variant="primary" icon={Check} onPointerDown={hold} onMouseDown={hold} onClick={save} aria-label="Save edit">Save</Button>
+          </>
+        )}
       </div>
+      {phone && pos && root && createPortal(
+        <div className="nv-edit-float nv-fade" style={{ top: pos.top, left: pos.left }} onClick={(e) => e.stopPropagation()}>
+          <Button variant="icon" icon={Check} className="nv-edit-yes" onPointerDown={hold} onMouseDown={hold} onClick={save} aria-label="Save edit" />
+          <Button variant="icon" icon={X} className="nv-edit-no" onPointerDown={hold} onMouseDown={hold} onClick={onCancel} aria-label="Cancel edit" />
+        </div>,
+        root,
+      )}
     </div>
   );
+}
+
+/* Phone widths, where the edit's confirm floats over the text */
+const PHONE = "(max-width: 639px)";
+function usePhoneWidth() {
+  const [on, setOn] = useState(() => typeof window !== "undefined" && !!window.matchMedia?.(PHONE).matches);
+  useEffect(() => {
+    const m = window.matchMedia?.(PHONE);
+    if (!m) return undefined;
+    const change = () => setOn(m.matches);
+    change();
+    m.addEventListener?.("change", change);
+    return () => m.removeEventListener?.("change", change);
+  }, []);
+  return on;
 }
 
 /* How far down a textarea the line holding `pos` sits, in its own pixels:
    the text up to there is laid out in an invisible copy with the same font,
    width and padding, and the end of that copy is measured. */
 function caretTop(ta, pos) {
+  return caretPoint(ta, pos).y;
+}
+
+/* The same, with how far across: { x, y } in the textarea's own pixels */
+function caretPoint(ta, pos) {
   const cs = getComputedStyle(ta);
   const mirror = document.createElement("div");
   for (const k of ["fontFamily", "fontSize", "fontWeight", "fontStyle", "letterSpacing", "lineHeight", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft", "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth", "boxSizing", "textTransform", "wordSpacing", "tabSize"]) mirror.style[k] = cs[k];
@@ -232,6 +323,7 @@ function caretTop(ta, pos) {
   mirror.appendChild(mark);
   document.body.appendChild(mirror);
   const y = mark.offsetTop + mark.offsetHeight / 2 - ta.scrollTop;
+  const x = mark.offsetLeft;
   mirror.remove();
-  return y;
+  return { x, y };
 }

@@ -286,7 +286,7 @@ describe("author's note presets", () => {
     const h = harness(initial, (data, update) => <ChatPage data={data} chatId="chat-test" update={update} goBack={() => {}} goSettings={() => {}} />);
     await mount(h.el);
     await click(host.querySelector("button[aria-label='Chat settings']"));
-    await click(btn("Notes"));
+    await click(btn("Quick tweaks"));
     return h.box;
   };
   const noteBox = () => document.querySelector(".nv-sheet-body textarea");

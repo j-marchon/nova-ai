@@ -14,7 +14,7 @@ import { TxRow, paymentsWith } from "./apps/Bank.jsx";
    avatar, name, verified check, @handle, role, bio, followers; Message for
    anyone but the persona; tabs Posts (their own posts and quotes), Replies
    (each with the post it answers) and Activity (everything they did, newest
-   first, activityOf); and at the bottom a collapsed "Profile stats (debug)"
+   first, activityOf); and at the bottom a collapsed "Profile details"
    panel listing the account's traits (wealth too, which is hidden
    elsewhere) and where each came from (stated, inferred, manual). */
 
@@ -49,7 +49,7 @@ export function accountView(ctx, key) {
   };
 }
 
-/* The trait rows the debug panel lists; empty when nothing was ever made. */
+/* The trait rows the details panel lists; empty when nothing was ever made. */
 export function traitRows(traits, traitsFrom) {
   const word = (k, v) => (k === "fame" ? `${v} (${FAME_WORDS[v] || "?"})` : k === "wealth" && WEALTH_MEANING[Number(v)] ? `${v} (${WEALTH_MEANING[Number(v)]})` : String(v));
   const rows = Object.entries(traits || {}).map(([k, v]) => ({ key: k, value: word(k, v), from: traitsFrom?.[k] || "unknown" }));
@@ -68,7 +68,7 @@ export function profileRows(ctx, key, tab) {
   return all;
 }
 
-function DebugStats({ a }) {
+function ProfileStats({ a }) {
   const [stats, setStats] = useState(false);
   const rows = traitRows(a.traits, a.traitsFrom);
   return (
@@ -80,7 +80,7 @@ function DebugStats({ a }) {
         aria-controls="account-stats"
         className="w-full flex items-center gap-2 px-3.5 min-h-[44px] text-left text-sm text-zinc-200"
       >
-        <span className="flex-1 min-w-0 truncate">Profile stats (debug)</span>
+        <span className="flex-1 min-w-0 truncate">Profile details</span>
         <ChevronRight size={16} aria-hidden className="text-zinc-500 shrink-0 nv-chevron" data-angle="90" data-open={stats ? "1" : "0"} />
       </button>
       <Disclosure open={stats}>
@@ -183,7 +183,7 @@ export function ProfilePage({ ctx, accountKey }) {
       ) : (
         <div data-testid={`profile-${tab}`}><EmptyLine>{empty}</EmptyLine></div>
       )}
-      <DebugStats a={a} />
+      <ProfileStats a={a} />
     </div>
   );
 }

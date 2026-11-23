@@ -1,4 +1,4 @@
-import { normalizeData } from "./data.js";
+import { DEFAULTS_GEN, normalizeData } from "./data.js";
 import { coreRecord, extractImages, imageId, isImage, joinState } from "./storage.js";
 import { writeChunked } from "./cards.js";
 
@@ -104,8 +104,10 @@ export function readBackup(text) {
   if (raw.backup > BACKUP_FORMAT) throw new Error("That backup is from a newer version of Nova. Update the app first.");
   const images = new Map(Object.entries(raw.images || {}));
   const state = normalizeData(joinState(raw.core, Array.isArray(raw.chats) ? raw.chats : [], images));
+  /* a backup from before the current defaults must not bring older ones back */
+  const predates = !(Number(raw.core?.settings?.defaultsGen) >= DEFAULTS_GEN);
   const skins = Array.isArray(raw.skins) ? raw.skins.filter((s) => s && typeof s.zip === "string") : [];
-  return { state, createdAt: raw.createdAt || null, skins };
+  return { state, createdAt: raw.createdAt || null, skins, predates };
 }
 
 /* What a backup holds, for the line that asks before restoring it. */

@@ -37,6 +37,16 @@ describe("buildApiMessages", () => {
     expect(last(msgs)).toContain("[Keep Mira sarcastic.]");
   });
 
+  it("sends each character's scenario once, expanding macros for its owner", () => {
+    const character = { ...mira, scenario: "{{char}} misses the ferry." };
+    const linked = { ...tom, scenario: "{{char}} has a boat." };
+    for (const ensemble of [[], [linked]]) {
+      const [sys] = buildApiMessages({ character, ensemble, history, settings: settings() });
+      expect(sys.content.split("Mira misses the ferry.")).toHaveLength(2);
+      if (ensemble.length) expect(sys.content).toContain("Tom Reyes has a boat.");
+    }
+  });
+
   it("leaves card instructions out when switched off", () => {
     const msgs = buildApiMessages({ character: mira, username: "Ana", history, settings: settings({ cardInstructions: false }) });
     expect(msgs[0].content).not.toContain("Run a heist game");

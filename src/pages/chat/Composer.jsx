@@ -1,6 +1,6 @@
 import { MotionList } from "../../components/motion/MotionList.jsx";
 import { forwardRef, memo, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { FastForward, NotebookPen, Plus, Reply, Send, Smartphone, Sparkles, Square, UserRound, Users, X } from "lucide-react";
+import { FastForward, Plus, Reply, Send, Smartphone, SlidersHorizontal, Sparkles, Square, UserRound, Users, X } from "lucide-react";
 import { AccBtn, Button, selStyle, SwapIcon } from "../../components/ui.jsx";
 import { suggestSlashCommands } from "../../lib/slash.js";
 import { uid } from "../../lib/util.js";
@@ -252,7 +252,7 @@ export const Composer = memo(forwardRef(function Composer({
             lit whenever one is picked. */}
         <div className="nv-composer-island" role="toolbar" aria-label="Chat options">
           <IslandBtn icon={Reply} label="Reply style" title={`Reply style: ${styleName}`} on={styleOn} onClick={() => actions.openStyle()} />
-          <IslandBtn icon={NotebookPen} label={noteOn ? "Author's note (on)" : "Author's note"} title={noteOn ? "Author's note: on" : "Author's note"} on={noteOn} onClick={() => actions.openNote()} />
+          <IslandBtn icon={SlidersHorizontal} label={noteOn ? "Quick tweaks (on)" : "Quick tweaks"} title={noteOn ? "Quick tweaks: on" : "Quick tweaks"} on={noteOn} onClick={() => actions.openNote()} />
           <IslandBtn
             icon={scopeOn ? Users : UserRound}
             label="Nova Scope"

@@ -21,7 +21,8 @@ import { hasKey } from "../lib/api.js";
 import { DEFAULT_HISTORY_TOKENS, MAX_HISTORY_TOKENS } from "../lib/data.js";
 import { bannedList } from "../lib/prompt.js";
 import { SUPPORTED_LANGUAGES } from "../lib/translate.js";
-import { STANDARD, SUPPORT_URL, canWear, isBuiltInSkin, loadSkin, sceneSetOf, skinList, skinOf, skinScheme } from "../skins/skins.js";
+import { STANDARD, SUPPORT_URL, canWear, isBuiltInSkin, loadSkin, sceneSetOf, skinList, skinOf, skinScheme, skinTileArt } from "../skins/skins.js";
+import { SkinTile } from "../skins/SkinTile.jsx";
 import { MAX_ZIP_BYTES, SkinError } from "../skins/pack.js";
 import { installPack, removePack } from "../skins/store.js";
 import { useInstalledSkins, useLoadedSkins } from "../components/useSkin.js";
@@ -63,7 +64,7 @@ function SkinPicker({ value, onChange }) {
     setBusy(true);
     setNote(null);
     try {
-      if (file.size > MAX_ZIP_BYTES) throw new SkinError("That file is larger than a skin can be (12 MB).");
+      if (file.size > MAX_ZIP_BYTES) throw new SkinError(`That file is larger than a skin can be (${MAX_ZIP_BYTES / 1048576} MB).`);
       const { meta, status } = await installPack(await file.arrayBuffer(), { expect: unlocking?.id || null });
       onChange(meta.id);
       setNote({ ok: true, text: status === "added" ? `${meta.name} unlocked. It is on now.` : `${meta.name} updated to ${meta.version}.` });
@@ -105,10 +106,11 @@ function SkinPicker({ value, onChange }) {
               className="nv-tile nv-hair relative rounded-2xl overflow-hidden text-left"
               style={{ borderColor: on ? "var(--nv-ink)" : undefined }}
             >
-              {/* the skin's first background, or its colours before it is unlocked */}
-              {sceneSetOf(k.id, rev)?.scenes[0]?.thumb
-                ? <img src={sceneSetOf(k.id, rev).base + sceneSetOf(k.id, rev).scenes[0].thumb} alt="" loading="lazy" decoding="async" className="block w-full h-16 object-cover" />
-                : <span aria-hidden className="block h-16" style={{ background: k.swatch || STANDARD.swatch, opacity: k.locked ? 0.45 : undefined }} />}
+              {/* the skin's first background, moving while on screen
+                  (skins/SkinTile), or its colours when it has none */}
+              {skinTileArt(k.id, rev)
+                ? <SkinTile {...skinTileArt(k.id, rev)} className="block w-full aspect-video object-cover" />
+                : <span aria-hidden className="block w-full aspect-video" style={{ background: k.swatch || STANDARD.swatch, opacity: k.locked ? 0.45 : undefined }} />}
               <span className="flex items-center gap-2 px-3 pt-2.5">
                 <span className="text-sm text-zinc-100 font-medium truncate">{k.name}</span>
                 {on && <Check size={14} className="ml-auto shrink-0" aria-hidden />}
@@ -201,20 +203,25 @@ export function AppearancePanel({ ap, onChange }) {
   const skinName = skinList().find((k) => k.id === skinOf(ap))?.name;
 
   return (
-    <div className="nv-settings-stage space-y-3">
-
+    /* two columns of their own on a wide window (as on You): the skin
+       beside the rest, so no short block leaves a hole beside a tall one */
+    <div className="nv-settings-stage nv-look-stage space-y-3 xl:space-y-0">
+      <div className="space-y-3 min-w-0">
       <Block label="Skin" i={0}>
         <SkinPicker value={skinOf(ap)} onChange={(skin) => onChange({ skin })} />
         <ScenePicker skin={skinOf(ap)} value={ap.scenes?.[skinOf(ap)]} onChange={(id) => onChange({ scenes: { ...(ap.scenes || {}), [skinOf(ap)]: id } })} />
         <ToggleRow
-          on={ap.skinInChat !== false}
-          onClick={() => onChange({ skinInChat: ap.skinInChat === false })}
+          on={ap.skinInChat === true}
+          onClick={() => onChange({ skinInChat: ap.skinInChat !== true })}
           title="Skin in chats"
-          sub="Off: chats show in the standard look, just the story and its backdrop."
+          sub="Off: the chat itself is plain black or white; the rest keeps the skin."
         />
         {/* Android switches the launcher icon at the next start (skins/icons.js) */}
         {window.Capacitor?.isNativePlatform?.() && <p className="text-[11px] text-zinc-500 leading-snug">The app icon follows the skin from the next time Nova starts.</p>}
       </Block>
+      </div>
+
+      <div className="space-y-3 min-w-0">
 
       <Block label="Mode" i={1}>
         <Segmented
@@ -273,6 +280,7 @@ export function AppearancePanel({ ap, onChange }) {
           ]}
         />
       </Block>
+      </div>
 
     </div>
   );
@@ -337,18 +345,11 @@ export function SettingsPage({ data, update }) {
         )}
 
         {tab === "replies" && (
-          <>
+          /* On a wide window the blocks flow down two balanced columns
+             (.nv-settings-flow): the reply styles grow with your prompts,
+             so no fixed split would stay even */
+          <div className="nv-settings-flow space-y-3">
             <StyleChips settings={s} onChange={(next) => update({ settings: next })} />
-
-            <div className="p-4 sm:p-5 nv-block">
-              <Slider
-                label="Conversation memory"
-                value={s.historyTokens ?? DEFAULT_HISTORY_TOKENS}
-                min={1000} max={MAX_HISTORY_TOKENS} step={500}
-                onChange={(v) => setS({ historyTokens: v })}
-                fmt={(v) => `${(v / 1000).toFixed(1)}k tokens`}
-              />
-            </div>
 
             <Block label="Banned phrases" i={1} aside={<span className="text-[11px] text-zinc-500">{bans ? `${bans} phrase${bans === 1 ? "" : "s"}` : "Off"}</span>}>
               <TextArea
@@ -380,15 +381,23 @@ export function SettingsPage({ data, update }) {
             <Block label="Read aloud" i={3}>
               <VoiceSection voiceSettings={s.voice} providers={s.providers || []} onChange={(voice) => setS({ voice })} />
             </Block>
-          </>
+          </div>
         )}
 
         {tab === "memory" && (
           <div className="space-y-3 p-4 sm:p-5 nv-block">
-            <ToggleRow on={!!s.ragOn} onClick={() => setS({ ragOn: !s.ragOn })} title="Recall related messages" sub="Local word search" />
-            <ToggleRow on={s.memoryOn !== false} onClick={() => setS({ memoryOn: s.memoryOn === false })} title="Long-term memory" />
+            <Slider
+              label="Context window"
+              value={s.historyTokens ?? DEFAULT_HISTORY_TOKENS}
+              min={1000} max={MAX_HISTORY_TOKENS} step={500}
+              onChange={(v) => setS({ historyTokens: v })}
+              fmt={(v) => `${(v / 1000).toFixed(1)}k tokens`}
+            />
+            <p className="nv-label pt-1">Memory</p>
+            <ToggleRow on={s.memoryOn !== false} onClick={() => setS({ memoryOn: s.memoryOn === false })} title="Story summary" sub="Old messages become a short note" />
             <div className="nv-hair px-3.5 py-3 rounded-xl">
-              <p className="text-sm text-zinc-100 mb-2.5">Scene tracking</p>
+              <p className="text-sm text-zinc-100">Scene tracker</p>
+              <p className="text-[11px] text-zinc-500 leading-snug mt-0.5 mb-2.5">Who, where and when, rewritten every few replies</p>
               <div className="grid grid-cols-4 gap-1.5">
                 {[{ v: 0, l: "Off" }, { v: 2, l: "Every 2" }, { v: 4, l: "Every 4" }, { v: 8, l: "Every 8" }].map(({ v, l }) => {
                   const on = (s.sceneEvery ?? 4) === v;
@@ -405,6 +414,8 @@ export function SettingsPage({ data, update }) {
                 })}
               </div>
             </div>
+            <ToggleRow on={!!s.ragOn} onClick={() => setS({ ragOn: !s.ragOn })} title="Recall" sub="Older messages that match the newest one" />
+            <p className="nv-label pt-1">Cards and lore</p>
             <ToggleRow on={s.loreOn !== false} onClick={() => setS({ loreOn: s.loreOn === false })} title="Lorebooks" />
             {s.loreOn !== false && (
               <div className="nv-hair px-3.5 py-3 rounded-xl space-y-3">
@@ -464,16 +475,22 @@ export function SettingsPage({ data, update }) {
         ))}
 
         {tab === "profile" && (
-          <>
-            <div className="p-4 sm:p-5 nv-block">
-              <Field label="Your name">
-                <TextInput value={data.username} onChange={(e) => update({ username: e.target.value })} placeholder="What characters call you" />
-              </Field>
+          /* two columns of their own on a wide window, so a short panel
+             never leaves a gap beside a tall one */
+          <div className="nv-settings-stage space-y-3 xl:space-y-0">
+            <div className="space-y-3 min-w-0">
+              <div className="p-4 sm:p-5 nv-block">
+                <Field label="Your name">
+                  <TextInput value={data.username} onChange={(e) => update({ username: e.target.value })} placeholder="What characters call you" />
+                </Field>
+              </div>
+              <SyncPanel data={data} update={update} />
             </div>
-            <BackupPanel data={data} update={update} />
-            <SyncPanel data={data} update={update} />
-            <UpdatePanel data={data} update={update} />
-          </>
+            <div className="space-y-3 min-w-0">
+              <BackupPanel data={data} update={update} />
+              <UpdatePanel data={data} update={update} />
+            </div>
+          </div>
         )}
 
       </div>

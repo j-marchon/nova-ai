@@ -193,7 +193,7 @@ describe("Author's Note ChatPage UI", () => {
     updatedAt: Date.now(),
   };
 
-  it("opens the note from the chat's Notes tab and edits it", async () => {
+  it("opens the note from the chat's Quick tweaks tab and edits it", async () => {
     let currentData = {
       ...emptyData,
       characters: [mira],
@@ -225,7 +225,7 @@ describe("Author's Note ChatPage UI", () => {
     // the ⋮ menu in the header, then its Notes tab
     await act(async () => host.querySelector("button[aria-label='Chat settings']").click());
     await flush();
-    const row = [...host.querySelectorAll("button")].find((b) => b.textContent === "Notes");
+    const row = [...host.querySelectorAll("button")].find((b) => b.textContent === "Quick tweaks");
     expect(row).toBeDefined();
     await act(async () => row.click());
     await flush();
@@ -338,7 +338,7 @@ describe("Author's Note ChatPage UI", () => {
     expect(host.textContent).toContain("Chat settings");
 
     // the Notes tab holds the author's note
-    const noteTab = [...host.querySelectorAll("button[aria-pressed]")].find((r) => r.textContent === "Notes");
+    const noteTab = [...host.querySelectorAll("button[aria-pressed]")].find((r) => r.textContent === "Quick tweaks");
     expect(noteTab).toBeDefined();
 
     await act(async () => {

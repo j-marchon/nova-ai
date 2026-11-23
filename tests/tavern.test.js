@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { rollDice, runMacros, stripComments } from "../src/lib/macros.js";
-import { applyPromptRegex, readTavernPreset, tavernRegex } from "../src/lib/tavern.js";
+import { applyPromptRegex, applyRegex, readTavernPreset, tavernRegex } from "../src/lib/tavern.js";
 import { parseStyleImport } from "../src/lib/styles.js";
 import { buildApiMessages } from "../src/lib/prompt.js";
 import { emptyData } from "../src/lib/data.js";
@@ -153,3 +153,53 @@ describe("an imported preset, sent", () => {
     expect(all).not.toContain("Write as Ana");
   });
 });
+
+describe("a preset that places its own sections", () => {
+  const st = {
+    prompts: [
+      { identifier: "main", role: "system", content: "Rules.", injection_position: 0 },
+      { identifier: "lw", role: "system", content: "[World]", injection_position: 0 },
+      { identifier: "worldInfoBefore", marker: true },
+      { identifier: "lp", role: "system", content: "[{{user}}'s persona]", injection_position: 0 },
+      { identifier: "personaDescription", marker: true },
+      { identifier: "lc", role: "system", content: "[{{char}}'s sheet]", injection_position: 0 },
+      { identifier: "charDescription", marker: true },
+      { identifier: "imp", role: "system", content: "Only when writing for the user.", injection_trigger: ["impersonate"], injection_position: 0 },
+      { identifier: "chatHistory", marker: true },
+    ],
+    prompt_order: [{ character_id: 1, order: ["main", "lw", "worldInfoBefore", "lp", "personaDescription", "lc", "charDescription", "imp", "chatHistory"].map((identifier) => ({ identifier, enabled: true })) }],
+    impersonation_prompt: "Write as {{user}}.",
+    extensions: { regex_scripts: [
+      { scriptName: "Rewrite", findRegex: "/\\bAna\\b/g", replaceString: "you", placement: [2] },
+      { scriptName: "Mine", findRegex: "/{{user}}/g", replaceString: "me", placement: [2], substituteRegex: 1, promptOnly: true },
+    ] },
+  };
+  const [x] = parseStyleImport(JSON.stringify(st));
+  const settings = { ...emptyData.settings, stylePreset: "custom", customStyles: [{ ...x, id: "i" }], customStyleId: "i" };
+  const build = (extra = {}) => buildApiMessages({ character: { name: "Mira", description: "A thief." }, persona: { name: "Ana", description: "A pilot." }, username: "Ana", history: [msg("assistant", "Hi"), msg("user", "Hello")], settings, ...extra });
+
+  it("sends each label right before what it labels, and the sections in the preset's order", () => {
+    const sys = build()[0].content;
+    expect(sys.indexOf("Rules.")).toBeLessThan(sys.indexOf("[Ana's persona]"));
+    expect(sys).toMatch(/\[Ana's persona\]\n\nA pilot\.\n\n\[Mira's sheet\]\n\nA thief\./);
+  });
+
+  it("drops a label with nothing under it", () => {
+    expect(build()[0].content).not.toContain("[World]");
+  });
+
+  it("keeps Impersonate's text for Impersonate only", () => {
+    expect(x.modes.impersonate).toContain("Write as {{user}}.");
+    expect(x.modes.impersonate).toContain("Only when writing for the user.");
+    expect(build().map((m) => m.content).join("\n")).not.toContain("Write as Ana.");
+    expect(build({ mode: "impersonate" }).map((m) => m.content).join("\n")).toContain("Write as Ana.");
+  });
+
+  it("keeps scripts that rewrite the saved reply, and fills macros in a pattern", () => {
+    expect(x.saved.map((r) => r.name)).toEqual(["Rewrite"]);
+    expect(applyRegex("Ana waves", x.saved, "assistant", 0)).toBe("you waves");
+    const mine = x.regex.find((r) => r.name === "Mine");
+    expect(applyRegex("Ana and Mira", [mine], "assistant", 0, { user: "Ana", char: "Mira" })).toBe("me and Mira");
+  });
+});
+

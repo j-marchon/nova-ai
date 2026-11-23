@@ -7,6 +7,14 @@ import { hideNotes, stripTracker } from "./text.js";
 
 let currentUtterance = null;
 let currentAudio = null;
+let startTimer = null; // watchdog: no start event soon after speak() means the engine is mute
+let deferTimer = null; // a speak() held back a moment after a cancel
+let lastCancel = null; // { synth, at } of the last cancel() that stopped real speech
+
+/* Chromium drops a speak() that comes right after cancel() on the same
+   engine; this is how long speak() waits after such a cancel. */
+const CANCEL_SETTLE_MS = 120;
+const START_WAIT_MS = 8000;
 
 /* Clean roleplay text before sending to speech synthesis.
    Strips thoughts (<think>...</think>), hidden notes (<!-- ... -->),
@@ -110,6 +118,41 @@ export function getVoices() {
   return window.speechSynthesis.getVoices() || [];
 }
 
+/* The voices, once the engine has them. They arrive late: on Linux and
+   Android the first getVoices() is usually empty and the list shows up some
+   time after (voiceschanged, or just on a later call), so this asks again
+   until the list is there or the wait runs out. Resolves with [] if none. */
+export function loadVoices(wait = 4000) {
+  return new Promise((resolve) => {
+    const synth = typeof window !== "undefined" ? window.speechSynthesis : null;
+    if (!synth) return resolve([]);
+    let done = false, poll = null, limit = null;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearInterval(poll);
+      clearTimeout(limit);
+      try { synth.removeEventListener?.("voiceschanged", check); } catch {}
+      resolve(getVoices());
+    };
+    const check = () => { if (getVoices().length) finish(); };
+    try { synth.addEventListener?.("voiceschanged", check); } catch {}
+    poll = setInterval(check, 250);
+    limit = setTimeout(finish, wait);
+    check();
+  });
+}
+
+/* One short line for when reading aloud did not work: what is missing on
+   this device. `err` is whatever speak() passed to onError. */
+export function speechProblem(err) {
+  const ua = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
+  if (/android/i.test(ua)) return "This phone has no speech engine. Turn one on in Android Settings → Text-to-speech.";
+  if (/linux|x11/i.test(ua) && !/android/i.test(ua)) return "No speech engine found. Install it with: sudo apt install speech-dispatcher espeak-ng, then restart Nova.";
+  if (err?.error === "not-allowed") return "The browser blocked speech. Tap the button again.";
+  return "This device could not read aloud. Pick another voice source above.";
+}
+
 /* Checks if speech synthesis is currently active */
 export function isSpeaking() {
   const synthSpeaking = typeof window !== "undefined" && Boolean(window.speechSynthesis?.speaking);
@@ -119,6 +162,9 @@ export function isSpeaking() {
 
 /* Stops any current speech immediately */
 export function stopSpeech() {
+  clearTimeout(startTimer);
+  clearTimeout(deferTimer);
+  startTimer = deferTimer = null;
   if (currentAudio) {
     try {
       currentAudio.pause();
@@ -127,8 +173,12 @@ export function stopSpeech() {
     currentAudio = null;
   }
   if (typeof window !== "undefined" && window.speechSynthesis) {
+    const synth = window.speechSynthesis;
     try {
-      window.speechSynthesis.cancel();
+      if (synth.speaking || synth.pending || currentUtterance) lastCancel = { synth, at: Date.now() };
+      synth.cancel();
+      /* a paused engine stays paused through cancel() and then swallows the next speak() */
+      if (synth.paused) synth.resume?.();
     } catch {}
   }
   currentUtterance = null;
@@ -252,36 +302,59 @@ export function speak(text, {
   if (voiceName) {
     const voices = getVoices();
     const matched = voices.find((v) => v.name === voiceName || v.voiceURI === voiceName);
-    if (matched) utter.voice = matched;
+    if (matched) { utter.voice = matched; if (matched.lang) utter.lang = matched.lang; }
   }
 
+  const settle = () => { clearTimeout(startTimer); startTimer = null; };
+
   utter.onstart = () => {
+    settle();
     onStart?.();
   };
 
   utter.onend = () => {
+    settle();
     if (currentUtterance === utter) currentUtterance = null;
     onEnd?.();
   };
 
   utter.onerror = (e) => {
+    settle();
     if (currentUtterance === utter) currentUtterance = null;
-    if (e.error === "interrupted" || e.error === "canceled") {
+    if (e?.error === "interrupted" || e?.error === "canceled") {
       onEnd?.();
       return;
     }
     onError?.(e);
   };
 
-  // Keep a global reference to prevent garbage collection mid-utterance on Chromium
-  currentUtterance = utter;
-  try {
-    window.speechSynthesis.speak(utter);
-  } catch (err) {
-    currentUtterance = null;
-    onError?.(err);
-    return null;
-  }
+  const synth = window.speechSynthesis;
+  const begin = () => {
+    deferTimer = null;
+    // Keep a global reference to prevent garbage collection mid-utterance on Chromium
+    currentUtterance = utter;
+    try {
+      synth.speak(utter);
+    } catch (err) {
+      currentUtterance = null;
+      onError?.(err);
+      return;
+    }
+    /* Some engines (an Android WebView with no speech engine, Chromium without
+       speech-dispatcher) accept speak() and then never say anything, with no
+       error. No start in time counts as a failure so the person is told. */
+    startTimer = setTimeout(() => {
+      startTimer = null;
+      if (currentUtterance !== utter) return;
+      try { synth.cancel(); } catch {}
+      currentUtterance = null;
+      onError?.(new Error("Speech did not start"));
+    }, START_WAIT_MS);
+  };
+
+  if (lastCancel?.synth === synth && Date.now() - lastCancel.at < CANCEL_SETTLE_MS) {
+    deferTimer = setTimeout(begin, CANCEL_SETTLE_MS);
+  } else begin();
 
   return utter;
 }

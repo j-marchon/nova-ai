@@ -149,7 +149,7 @@ describe("Notes tab", () => {
     await mount(<Host />);
     await flush();
     await click(host.querySelector("button[aria-label='Chat settings']"));
-    await click([...host.querySelectorAll("button[aria-pressed]")].find((b) => b.textContent === "Notes"));
+    await click([...host.querySelectorAll("button[aria-pressed]")].find((b) => b.textContent === "Quick tweaks"));
   };
   const noteBox = () => document.querySelector(".nv-sheet-body textarea");
   const nameBox = () => document.querySelector("input[aria-label='Preset name']");
@@ -177,11 +177,11 @@ describe("Notes tab", () => {
     expect(cur.chats[0].messages.at(-1)).toMatchObject({ role: "system", content: 'Author\'s Note loaded: "Slow Burn"' });
   });
 
-  it("is labelled Notes, with just the note: no Sent as and no sliders", async () => {
+  it("is labelled Quick tweaks, with just the note: no Sent as and no sliders", async () => {
     cur = withPresets([]);
     await openNote();
     const labels = [...host.querySelectorAll("[aria-label='Chat settings sections'] button")].map((b) => b.textContent.trim());
-    expect(labels).toEqual(["Persona", "Look", "Memory", "Notes", "Bookmarks", "Scene art", "Tokens", "Export"]);
+    expect(labels).toEqual(["Persona", "Look", "Memory", "Quick tweaks", "Bookmarks", "Scene art", "Tokens", "Export"]);
     const body = document.querySelector(".nv-sheet-body");
     expect(body.textContent).not.toContain("Sent as");
     expect(body.textContent).not.toContain("Placed");

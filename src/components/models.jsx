@@ -2,7 +2,7 @@ import { MotionList } from "./motion/MotionList.jsx";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowDownUp, Check, ChevronRight, Search, Star } from "lucide-react";
 import { AccBtn, Button, Modal, Segmented, Skeleton, TextInput, selStyle } from "./ui.jsx";
-import { activeModel, fetchOpenAIModels, fetchProviderModels, priceLabel, prettyCtx, providerOf, sourceOf } from "../lib/api.js";
+import { activeModel, fetchOpenAIModels, fetchProviderModels, priceLabel, providerOf, sourceOf } from "../lib/api.js";
 import { activeProvider, patchProvider } from "../lib/providers.js";
 
 import { modelLabel } from "../lib/models.js";
@@ -69,9 +69,9 @@ const turnCost = (m) => m.pricing.prompt * 4 + m.pricing.completion;
 
 /* one model in the list; outside ModelList so it is not a new component
    type, and remounted, on every render */
-function Item({ m, on, fav, onPick, onToggleFav }) {
-  const price = m.pricing ? priceLabel(m.pricing) : m.free ? "Free" : null;
-  const meta = [price, prettyCtx(m.ctx)].filter(Boolean).join(" · ");
+function Item({ m, on, fav, onPick, onToggleFav, priced }) {
+  const price = priced ? (m.pricing ? priceLabel(m.pricing) : m.free ? "Free" : null) : null;
+  const meta = price || "";
   return (
     <div
       style={on ? selStyle(true) : {}}
@@ -99,7 +99,7 @@ function Item({ m, on, fav, onPick, onToggleFav }) {
 
 export function ModelPicker({ settings, onChange, onClose, onProviders, current, onPick }) {
   return (
-    <Modal title="Choose a model" onClose={onClose}>
+    <Modal title="Choose a model" onClose={onClose} fixed>
       <ModelList settings={settings} onChange={onChange} onDone={onClose} onProviders={onProviders} current={current} onPick={onPick} />
     </Modal>
   );
@@ -122,7 +122,7 @@ export function ModelList({ settings, onChange, onDone, onProviders, current, on
      show the first screenful */
   const [limit, setLimit] = useState(60);
   const favs = provider?.favorites || [];
-  const [tab, setTab] = useState(() => (favs.length ? "favorites" : "models"));
+  const [tab, setTab] = useState("models");
   const sort = provider?.sort || "default";
   const freeOnly = !!provider?.freeOnly;
   const picked = current ?? (provider ? activeModel(settings) : "");
@@ -172,6 +172,15 @@ export function ModelList({ settings, onChange, onDone, onProviders, current, on
     const dir = sort === "price-asc" ? 1 : -1;
     /* unknown prices last either way */
     rows = [...rows].sort((a, b) => (!a.pricing - !b.pricing) || (a.pricing && b.pricing ? dir * (turnCost(a) - turnCost(b)) : 0));
+  }
+  /* the model in use always leads the list */
+  if (picked && !query) {
+    const at = rows.findIndex((m) => m.id === picked);
+    if (at > 0) rows = [rows[at], ...rows.slice(0, at), ...rows.slice(at + 1)];
+    else if (at < 0 && (tab === "models" ? list : true)) rows = [info(picked), ...rows];
+  } else if (picked) {
+    const at = rows.findIndex((m) => m.id === picked);
+    if (at > 0) rows = [rows[at], ...rows.slice(0, at), ...rows.slice(at + 1)];
   }
   const shown = rows.slice(0, limit);
 
@@ -258,7 +267,7 @@ export function ModelList({ settings, onChange, onDone, onProviders, current, on
         )}
 
         <MotionList className="space-y-1.5">
-          {shown.map((m) => <Item key={m.id} m={m} on={picked === m.id} fav={favs.includes(m.id)} onPick={pick} onToggleFav={toggleFav} />)}
+          {shown.map((m) => <Item key={m.id} m={m} on={picked === m.id} fav={favs.includes(m.id)} onPick={pick} onToggleFav={toggleFav} priced={src !== "nova-bridge"} />)}
         </MotionList>
         {rows.length > shown.length && (
           <Button

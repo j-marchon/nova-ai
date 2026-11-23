@@ -33,6 +33,7 @@ export function activePreset(settings) {
    Top K at 0 means off and is not sent. Penalties at their neutral value
    (0, or 1 for repetition) are sent anyway, so a provider's own default
    cannot sneak back in. */
+export const MAX_REPLY_TOKENS = 128000;
 export const STYLE_TUNING = [
   { key: "temperature", label: "Temperature", min: 0, max: 2, step: 0.01 },
   { key: "top_p", label: "Top P", min: 0, max: 1, step: 0.01 },
@@ -41,8 +42,33 @@ export const STYLE_TUNING = [
   { key: "frequency_penalty", label: "Frequency penalty", min: -2, max: 2, step: 0.01, hint: "0 = off" },
   { key: "presence_penalty", label: "Presence penalty", min: -2, max: 2, step: 0.01, hint: "0 = off" },
   { key: "repetition_penalty", label: "Repetition penalty", min: 0.5, max: 2, step: 0.01, hint: "1 = off" },
-  { key: "max_tokens", label: "Max reply length", min: 100, max: 8000, step: 50, hint: "tokens" },
+  { key: "max_tokens", label: "Max reply length", min: 100, max: MAX_REPLY_TOKENS, step: 50, hint: "tokens" },
 ];
+
+/* ---------- how long a reply may be ----------
+
+   The slider and every import stop at the largest reply any model here
+   writes; what is sent is held to the selected model's own limit. The table
+   is the published output limits by family, most specific first. */
+const OUTPUT_LIMITS = [
+  [/gemini-(2\.5|[3-9])/i, 65536],
+  [/gemini/i, 8192],
+  [/claude-(opus|sonnet|haiku)-(4|5)|(^|\/)claude-(opus|sonnet|haiku)-(4|5)|opus-4|sonnet-4|haiku-4|opus-5|sonnet-5|haiku-5|fable/i, 64000],
+  [/claude-3-7|sonnet-3\.7/i, 64000],
+  [/claude/i, 8192],
+  [/gpt-5|o[1-9](-|$)|gpt-oss/i, 128000],
+  [/gpt-4\.1/i, 32768],
+  [/gpt-4o|gpt-4-turbo|gpt-4/i, 16384],
+  [/deepseek.*(reason|r1)/i, 64000],
+  [/deepseek/i, 8192],
+  [/grok/i, 32768],
+  [/qwen|glm|kimi|minimax|mimo|mistral|llama|gemma|nemotron/i, 32768],
+];
+export function outputLimit(model) {
+  const id = String(model || "");
+  for (const [re, n] of OUTPUT_LIMITS) if (re.test(id)) return n;
+  return 32768;
+}
 
 /* The text-generation samplers, sent only where they are understood (see
    attachAdvancedSamplers in api.js). Off at their default. */
@@ -171,12 +197,15 @@ export function styleTuning(settings, preset) {
   /* strict: OpenRouter only, route to providers that honour every value */
   const out = { on: !!saved.on, strict: !!saved.strict };
   const def = styleDefaults(preset);
+  const cap = outputLimit(activeModel(settings));
   for (const f of [...STYLE_TUNING, ...ADVANCED_TUNING]) {
     const v = Number(saved[f.key]);
+    const max = f.key === "max_tokens" ? cap : f.max;
     out[f.key] = Number.isFinite(v) && saved[f.key] !== "" && saved[f.key] != null
-      ? Math.min(f.max, Math.max(f.min, f.step >= 1 ? Math.round(v) : v))
+      ? Math.min(max, Math.max(f.min, f.step >= 1 ? Math.round(v) : v))
       : (def[f.key] ?? f.default ?? 0);
   }
+  if (out.max_tokens > cap) out.max_tokens = cap;
   if (Array.isArray(saved.dry_sequence_breakers) && saved.dry_sequence_breakers.length) {
     out.dry_sequence_breakers = saved.dry_sequence_breakers.map(String);
   } else {
@@ -384,7 +413,8 @@ export function parseStyleImport(raw, fallbackName = "Imported prompt", { allowE
      underneath as they always have. */
   const finish = (x) => {
     const r = { name: x.name, text: x.text };
-    for (const k of ["post", "inject", "regex", "display"]) if (x[k]?.length) r[k] = x[k];
+    for (const k of ["post", "inject", "regex", "display", "saved", "layout"]) if (x[k]?.length) r[k] = x[k];
+    for (const k of ["modes", "formats"]) if (x[k] && Object.keys(x[k]).length) r[k] = x[k];
     if (x.sampler && Object.keys(x.sampler).some((k) => k !== "temperature" && k !== "max_tokens")) {
       r.sampler = fullSampler(x.sampler);
       return r;
@@ -393,7 +423,7 @@ export function parseStyleImport(raw, fallbackName = "Imported prompt", { allowE
     const maxTokens = x.sampler?.max_tokens ?? x.maxTokens;
     /* kept only when sensible, so a stray field cannot wreck the sampler */
     if (temperature != null && temperature >= 0 && temperature <= 2) r.temperature = temperature;
-    if (maxTokens != null && maxTokens >= 50 && maxTokens <= 8000) r.maxTokens = Math.round(maxTokens);
+    if (maxTokens != null && maxTokens >= 50 && maxTokens <= MAX_REPLY_TOKENS) r.maxTokens = Math.round(maxTokens);
     return r;
   };
 
@@ -419,6 +449,10 @@ export function parseStyleImport(raw, fallbackName = "Imported prompt", { allowE
         ...(st.inject.length ? { inject: st.inject } : {}),
         ...(st.regex.length ? { regex: st.regex } : {}),
         ...(st.display.length ? { display: st.display } : {}),
+        ...(st.saved.length ? { saved: st.saved } : {}),
+        ...(st.layout ? { layout: st.layout } : {}),
+        ...(st.modes ? { modes: st.modes } : {}),
+        ...(st.formats ? { formats: st.formats } : {}),
       };
       return st.text ? { name, text: st.text, temperature, maxTokens, sampler, ...extras } : { name, text: "", sampler };
     }
@@ -447,12 +481,19 @@ export function stylePrompt(preset) {
    cap come from the style, unless that style's fine tuning is on — then
    `tuned` carries the whole sampler and replaces the style's own. */
 export function genParams(settings) {
+  const p = genParamsOf(settings);
+  const cap = outputLimit(activeModel(settings));
+  if (p.max_tokens > cap) return { ...p, max_tokens: cap, ...(p.tuned ? { tuned: { ...p.tuned, max_tokens: cap } } : {}) };
+  return p;
+}
+
+function genParamsOf(settings) {
   const preset = activePreset(settings);
   if (preset.custom) {
     const c = activeCustomStyle(settings);
     /* An empty prompt sends nothing useful, so it writes as the default
        until text is added. The picker says so; it is never silent. */
-    if (!c) return genParams({ ...settings, stylePreset: DEFAULT_STYLE });
+    if (!c) return genParamsOf({ ...settings, stylePreset: DEFAULT_STYLE });
     const sp = samplerPreset(settings);
     const tune = styleTuning(settings, sp);
     /* A prompt that brought its own sampler sends it as it is, fine tuning
@@ -471,6 +512,12 @@ export function genParams(settings) {
       regex: Array.isArray(c.regex) ? c.regex : [],
       /* and its display scripts, run on the bubbles (html.js) */
       display: Array.isArray(c.display) ? c.display : [],
+      /* scripts that rewrite a reply as it is saved, the preset's own order
+         of card sections, what it says for Impersonate and Continue */
+      saved: Array.isArray(c.saved) ? c.saved : [],
+      layout: Array.isArray(c.layout) ? c.layout : null,
+      modes: c.modes || null,
+      formats: c.formats || null,
       prompt: c.text.trim(),
       frame: "a roleplay",
       limit: "",

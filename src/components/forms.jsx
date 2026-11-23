@@ -4,12 +4,15 @@ import { BookMarked, ChevronLeft, ChevronRight, Download, ImageIcon, MapPin, Plu
 import { LorebookForm } from "./LorebookForm.jsx";
 import { AiFill } from "./AiFill.jsx";
 import { ThemeSection } from "./theme.jsx";
-import { AccBtn, Avatar, Button, Field, Modal, TextArea, TextInput } from "./ui.jsx";
+import { AccBtn, Avatar, Button, Field, Modal, Segmented, TextArea, TextInput, Toggle } from "./ui.jsx";
 import { AvatarPicker, useAvatarFile } from "./clip.jsx";
-import { characterCardPng, fileSafe, saveFile } from "../lib/cards.js";
+import { characterCardJson, characterCardPng, fileSafe, saveFile } from "../lib/cards.js";
 import { DEFAULT_THEME, greetingsOf, packGreetings } from "../lib/data.js";
 import { EMOTIONS } from "../lib/sprites.js";
 import { readImage, snapshotFile, uid } from "../lib/util.js";
+
+import { DESCRIPTION, PERSONALITY, dialogueEntries, dialogueText, profileSections, profileText, strings } from "../lib/characterTemplate.js";
+import { EntryList, ProfileFields } from "./CharacterProfile.jsx";
 
 /* ---------- opening scenarios, on the create forms ----------
 
@@ -228,28 +231,46 @@ export function CharacterForm({ initial, settings, onSave, onSettings, onClose, 
         sprites: {},
       };
     }
-    /* older characters kept these apart — fold them into one box on open */
-    const merged = [initial.description, initial.personality].filter(Boolean).join("\n\n");
-    /* and older ones still have a single firstMessage; greetingsOf turns it
-       into a one-entry list so the editor has something to work with */
-    return { ...initial, description: merged, personality: "", greetings: greetingsOf(initial), sprites: initial.sprites ? { ...initial.sprites } : {} };
+    return {
+      ...initial, description: profileText(DESCRIPTION, initial.description),
+      ...(initial.personality != null ? { personality: profileText(PERSONALITY, initial.personality) } : {}),
+      exampleDialogs: dialogueText(initial.exampleDialogs),
+      tags: strings(initial.tags), greetings: greetingsOf(initial), sprites: initial.sprites || {},
+    };
   });
+  const [advanced, setAdvanced] = useState(false);
+  const [cardTab, setCardTab] = useState("details");
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
   useReportDirty(f, dirtyRef);
-  const save = () => onSave({ ...f, ...packGreetings(f.greetings, "firstMessage"), sprites: f.sprites || {} });
+  const description = profileText(DESCRIPTION, f.description);
+  const personality = profileText(PERSONALITY, f.personality);
+  const examples = dialogueText(f.exampleDialogs);
+  const card = () => ({
+    ...f, description, personality, exampleDialogs: examples, tags: strings(f.tags),
+    ...packGreetings(f.greetings, "firstMessage"),
+  });
+  const current = {
+    name: f.name, tagline: f.tagline || "", description: profileSections(DESCRIPTION, f.description),
+    personality: profileSections(PERSONALITY, f.personality), scenario: f.scenario || "",
+    greetings: cardGreetings(f.greetings), exampleDialogs: dialogueEntries(f.exampleDialogs),
+    creatorNotes: f.creatorNotes || "", systemPrompt: f.systemPrompt || "",
+    postHistoryInstructions: f.postHistoryInstructions || "", tags: strings(f.tags),
+  };
+  const hasContent = f.name || f.tagline || description || personality || f.scenario || examples || current.greetings.length
+    || current.tags.length || f.creatorNotes || f.systemPrompt || f.postHistoryInstructions;
   const [editBook, setEditBook] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportErr, setExportErr] = useState(null);
   const [exportedTo, setExportedTo] = useState(null);
-  /* Exports what is in the form, saved or not, as a PNG card any other
-     frontend can read. */
-  const exportCard = async () => {
+  /* Export the current edits even before the user saves to their library. */
+  const exportCard = async (format) => {
     setExporting(true);
     setExportErr(null);
     setExportedTo(null);
     try {
-      const png = await characterCardPng({ ...f, ...packGreetings(f.greetings, "firstMessage") });
-      setExportedTo(await saveFile(`${fileSafe(f.name)}.png`, png, "image/png"));
+      const json = format === "json";
+      const data = json ? JSON.stringify(characterCardJson(card()), null, 2) : await characterCardPng(card());
+      setExportedTo(await saveFile(`${fileSafe(f.name)}.${format}`, data, json ? "application/json" : "image/png"));
     } catch {
       setExportErr("Could not export the card.");
     } finally {
@@ -261,7 +282,7 @@ export function CharacterForm({ initial, settings, onSave, onSettings, onClose, 
       title={initial ? "Edit character" : "New character"}
       onClose={onClose}
       screen
-      action={<SaveBtn disabled={!f.name.trim()} onClick={save} />}
+      action={<SaveBtn disabled={!f.name.trim()} onClick={() => onSave(card())} />}
     >
       <div className="space-y-4">
         <AiFill
@@ -269,10 +290,7 @@ export function CharacterForm({ initial, settings, onSave, onSettings, onClose, 
           itemId={initial?.id || null}
           settings={settings}
           onSettings={onSettings}
-          current={f.name || f.description || f.greetings?.some((g) => g.text) || f.exampleDialogs ? {
-            name: f.name, tagline: f.tagline || "", description: f.description,
-            greetings: cardGreetings(f.greetings), exampleDialogs: f.exampleDialogs || "",
-          } : null}
+          current={hasContent ? current : null}
           onFill={(o) => {
             /* only the keys the studio sent; the form as it was comes back on Undo */
             let before;
@@ -280,11 +298,9 @@ export function CharacterForm({ initial, settings, onSave, onSettings, onClose, 
               before = p;
               return {
                 ...p,
-                ...("name" in o ? { name: str(o.name) || p.name } : {}),
-                ...("tagline" in o ? { tagline: str(o.tagline) || p.tagline || "" } : {}),
-                ...("description" in o ? { description: str(o.description) } : {}),
+                ...o,
+                name: str(o.name) || p.name,
                 ...("greetings" in o ? { greetings: toGreetings(o, "firstMessage") } : {}),
-                ...("exampleDialogs" in o ? { exampleDialogs: str(o.exampleDialogs) } : {}),
               };
             });
             return () => { if (before) setF(before); };
@@ -292,72 +308,101 @@ export function CharacterForm({ initial, settings, onSave, onSettings, onClose, 
         />
 
         <Group i={0} title="Identity">
-          <AvatarPicker value={f.avatar} onChange={(v) => set("avatar", v)} />
+          <AvatarPicker value={f.avatar} onChange={(v) => set("avatar", v)} action={
+            <button type="button" role="switch" aria-checked={advanced} onClick={() => setAdvanced(!advanced)}
+              className="min-h-11 flex shrink-0 flex-col items-center justify-center gap-1 text-sm sm:flex-row sm:gap-2">
+              Advanced <Toggle on={advanced} />
+            </button>
+          } />
           <Field label="Name">
             <TextInput value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="Character name" />
           </Field>
           <Field label="Tagline">
             <TextInput value={f.tagline || ""} onChange={(e) => set("tagline", e.target.value)} placeholder="One line that sums them up" />
           </Field>
-          <Field label="Description">
-            <TextArea
-              rows={7}
-              value={f.description}
-              onChange={(e) => set("description", e.target.value)}
-              placeholder="Appearance, history, traits, mannerisms, way of speaking..."
-            />
-          </Field>
+          {!advanced && <>
+            <Field label="Description">
+              <TextArea rows={7} value={description} onChange={(e) => set("description", e.target.value)}
+                placeholder="Appearance, history, traits, mannerisms, way of speaking..." />
+            </Field>
+            {f.personality != null && <Field label="Personality">
+              <TextArea rows={4} value={personality} onChange={(e) => set("personality", e.target.value)} />
+            </Field>}
+          </>}
         </Group>
 
+        {advanced && <>
+          <Group i={1} title="Description">
+            <ProfileFields fields={DESCRIPTION} value={f.description} onChange={(v) => set("description", v)} />
+          </Group>
+          <Group i={2} title="Personality and what drives me">
+            <ProfileFields fields={PERSONALITY} value={f.personality} onChange={(v) => set("personality", v)} />
+          </Group>
+        </>}
+
         <Group i={1} title="Opening">
+          {(advanced || f.scenario != null) && <Field label="Scenario">
+            <TextArea rows={3} value={f.scenario || ""} onChange={(e) => set("scenario", e.target.value)} />
+          </Field>}
           <GreetingsEditor
             value={f.greetings}
             onChange={(v) => set("greetings", v)}
             placeholder="*She looks up from her book...* Oh, you made it."
           />
-          <Field label="Example dialogue">
-            <TextArea rows={3} value={f.exampleDialogs} onChange={(e) => set("exampleDialogs", e.target.value)} placeholder={"{{user}}: Hey\n{{char}}: *grins* About time."} />
-          </Field>
+          {advanced ? (
+            <EntryList label="Example dialogue" entry="dialogue line" multiline value={dialogueEntries(f.exampleDialogs)} onChange={(v) => set("exampleDialogs", v)} />
+          ) : (
+            <Field label="Example dialogue">
+              <TextArea rows={3} value={examples} onChange={(e) => set("exampleDialogs", e.target.value)} placeholder={"{{user}}: Hey\n{{char}}: *grins* About time."} />
+            </Field>
+          )}
         </Group>
 
         <Group i={2} title="Card">
-          {/* The card author's public description, kept from an import. */}
-          <Fold title="About this card" status={f.creatorNotes ? "" : "Empty"} start={!!f.creatorNotes && !initial}>
-            <TextArea
-              rows={6}
-              value={f.creatorNotes || ""}
-              onChange={(e) => set("creatorNotes", e.target.value)}
-              placeholder="The card's description, as its author wrote it"
-            />
-          </Fold>
-          {/* The card author's own instructions. Usually filled by an import. */}
-          <Fold title="Card instructions" status={f.systemPrompt || f.postHistoryInstructions ? "Set" : "None"}>
-            <Field label="System prompt">
-              <TextArea rows={4} value={f.systemPrompt || ""} onChange={(e) => set("systemPrompt", e.target.value)} />
-            </Field>
-            <Field label="Post-history instructions">
-              <TextArea rows={3} value={f.postHistoryInstructions || ""} onChange={(e) => set("postHistoryInstructions", e.target.value)} />
-            </Field>
-          </Fold>
-          {/* Emotion Sprites */}
-          <Fold title="Emotion Sprites" status={Object.values(f.sprites || {}).filter(Boolean).length ? `${Object.values(f.sprites || {}).filter(Boolean).length} set` : "None"}>
-            <EmotionSpritesEditor sprites={f.sprites} onChange={(s) => set("sprites", s)} />
-          </Fold>
-          {/* The card's own lorebook, sent in every chat with them. */}
-          <button
-            type="button"
-            onClick={() => setEditBook(true)}
-            className="nv-hair w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-left hover:bg-[var(--nv-control)]"
-          >
-            <BookMarked size={16} className="text-zinc-500 shrink-0" />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm text-zinc-200">Lorebook</p>
-              <p className="text-[11px] text-zinc-600 truncate">
-                {f.lorebook?.entries?.length ? `${f.lorebook.entries.length} ${f.lorebook.entries.length === 1 ? "entry" : "entries"}` : "None"}
-              </p>
-            </div>
-            <ChevronRight size={15} className="text-zinc-600 shrink-0" />
-          </button>
+          {advanced && <Segmented value={cardTab} onChange={setCardTab} options={[
+            { id: "details", label: "Card details" }, { id: "metadata", label: "Metadata" },
+          ]} />}
+          {advanced && cardTab === "metadata" ? (
+            <EntryList label="Tags" entry="tag" value={f.tags} onChange={(v) => set("tags", v)} />
+          ) : <>
+            {/* The card author's public description, kept from an import. */}
+            <Fold title="About this card" status={f.creatorNotes ? "" : "Empty"} start={!!f.creatorNotes && !initial}>
+              <TextArea
+                rows={6}
+                value={f.creatorNotes || ""}
+                onChange={(e) => set("creatorNotes", e.target.value)}
+                placeholder="The card's description, as its author wrote it"
+              />
+            </Fold>
+            {/* The card author's own instructions. Usually filled by an import. */}
+            <Fold title="Card instructions" status={f.systemPrompt || f.postHistoryInstructions ? "Set" : "None"}>
+              <Field label="System prompt">
+                <TextArea rows={4} value={f.systemPrompt || ""} onChange={(e) => set("systemPrompt", e.target.value)} />
+              </Field>
+              <Field label="Post-history instructions">
+                <TextArea rows={3} value={f.postHistoryInstructions || ""} onChange={(e) => set("postHistoryInstructions", e.target.value)} />
+              </Field>
+            </Fold>
+            {/* Emotion Sprites */}
+            <Fold title="Emotion Sprites" status={Object.values(f.sprites || {}).filter(Boolean).length ? `${Object.values(f.sprites || {}).filter(Boolean).length} set` : "None"}>
+              <EmotionSpritesEditor sprites={f.sprites} onChange={(s) => set("sprites", s)} />
+            </Fold>
+            {/* The card's own lorebook, sent in every chat with them. */}
+            <button
+              type="button"
+              onClick={() => setEditBook(true)}
+              className="nv-hair w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-left hover:bg-[var(--nv-control)]"
+            >
+              <BookMarked size={16} className="text-zinc-500 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm text-zinc-200">Lorebook</p>
+                <p className="text-[11px] text-zinc-600 truncate">
+                  {f.lorebook?.entries?.length ? `${f.lorebook.entries.length} ${f.lorebook.entries.length === 1 ? "entry" : "entries"}` : "None"}
+                </p>
+              </div>
+              <ChevronRight size={15} className="text-zinc-600 shrink-0" />
+            </button>
+          </>}
         </Group>
         {editBook && (
           <LorebookForm
@@ -377,15 +422,10 @@ export function CharacterForm({ initial, settings, onSave, onSettings, onClose, 
 
         <ThemeSection theme={f.theme} onChange={(t) => set("theme", t)} />
 
-        <Button
-          size="lg"
-          icon={Download}
-          onClick={exportCard}
-          disabled={!f.name.trim() || exporting}
-          className="w-full"
-        >
-          {exporting ? "Exporting..." : "Export card"}
-        </Button>
+        <div className="grid grid-cols-2 gap-2">
+          <Button size="lg" icon={Download} onClick={() => exportCard("png")} disabled={!f.name.trim() || exporting}>Export PNG</Button>
+          <Button size="lg" icon={Download} onClick={() => exportCard("json")} disabled={!f.name.trim() || exporting}>Export JSON</Button>
+        </div>
         {exportErr && <p className="text-[11px] text-zinc-100">{exportErr}</p>}
         {exportedTo && <p className="text-[11px] text-zinc-500">Saved to {exportedTo}</p>}
       </div>

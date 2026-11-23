@@ -300,3 +300,49 @@ export function visibleLog(chat) {
   const log = Array.isArray(chat?.world?.log) ? chat.world.log : [];
   return log.filter((e) => e && typeof e.text === "string" && anchorVisible(e.anchor, chat?.messages));
 }
+
+
+/* ---------- when a reply style brings its own memory ----------
+
+   Some presets ask the model to write a tracker or a running summary itself.
+   Nova keeps one too, so both would be sent and both kept up to date. A chat
+   can switch Nova's off for itself (chat.memoryOff), without touching the
+   settings other chats use. */
+export const MEMORY_PARTS = {
+  scene: { label: "Scene tracker", off: (s) => ({ ...s, sceneEvery: 0 }) },
+  summary: { label: "Story summary", off: (s) => ({ ...s, memoryOn: false }) },
+  recall: { label: "Recall", off: (s) => ({ ...s, ragOn: false }) },
+};
+
+/* The settings as this chat sees them: its own switches applied */
+export function withChatMemory(settings, chat) {
+  const off = chat?.memoryOff;
+  if (!off) return settings;
+  return Object.keys(MEMORY_PARTS).reduce((s, k) => (off[k] ? MEMORY_PARTS[k].off(s) : s), settings);
+}
+
+/* The app's settings with Nova's own `parts` switched off, for every chat */
+export function memoryOffEverywhere(settings, parts) {
+  return (parts || []).reduce((s, k) => (MEMORY_PARTS[k] ? MEMORY_PARTS[k].off(s) : s), settings);
+}
+
+/* What in the active reply style does the job of something Nova keeps:
+   [{ part, why }]. `style` is genParams(settings); `settings` says which of
+   Nova's own are on. Looked for in the prompt text and its display scripts. */
+export function memoryConflicts(style, settings, chat) {
+  if (!style?.custom) return [];
+  const text = [style.prompt, style.post, ...(style.inject || []).map((x) => x.text), ...(style.modes ? Object.values(style.modes) : [])].filter(Boolean).join("\n");
+  const shown = (style.display || []).map((r) => r.name).join("\n");
+  const found = [];
+  const seen = (part) => !chat?.memoryOff?.[part];
+  if (seen("scene") && settings.sceneEvery > 0 && (/\btracker\b|<scene>|current(ly)? (state|appearance)|present side characters/i.test(text) || /tracker/i.test(shown))) {
+    found.push({ part: "scene", why: "Writes its own tracker" });
+  }
+  if (seen("summary") && settings.memoryOn !== false && /story so far|running summary|\[\s*(beginning|recent)\s*=|summari[sz]e (the|what|everything)|memory (block|summary)|<summary>/i.test(text)) {
+    found.push({ part: "summary", why: "Keeps its own summary" });
+  }
+  if (seen("recall") && settings.ragOn && /relevant (past|previous) (messages|events)|recall|vector/i.test(text)) {
+    found.push({ part: "recall", why: "Brings back older messages itself" });
+  }
+  return found;
+}

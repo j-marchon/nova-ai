@@ -143,6 +143,9 @@ export function cardFields(json) {
     system_prompt: s(d.system_prompt),
     post_history_instructions: s(d.post_history_instructions),
     creator: s(d.creator),
+    characterVersion: s(d.character_version),
+    tagline: s(d.extensions?.nova?.tagline),
+    greetingLabels: Array.isArray(d.extensions?.nova?.greetingLabels) ? d.extensions.nova.greetingLabels.map(s) : [],
     tags: Array.isArray(d.tags) ? d.tags.filter((t) => typeof t === "string") : [],
     sprites: (d.sprites && typeof d.sprites === "object") ? d.sprites : (d.extensions?.sprites && typeof d.extensions.sprites === "object") ? d.extensions.sprites : {},
   };
@@ -189,23 +192,21 @@ function lorebookOf(f) {
 export function characterFromCard(fields, avatar, source, background) {
   const f = fields;
   const lorebook = lorebookOf(f);
-  const description = [macros(f.description).trim(), f.scenario.trim() ? `Scenario: ${macros(f.scenario).trim()}` : ""]
-    .filter(Boolean).join("\n\n");
   const greetings = [f.first_mes, ...f.alternate_greetings]
     .map((t) => macros(t).trim())
     .filter(Boolean)
-    .map((text, i) => ({ id: uid(), label: i === 0 ? "" : `Alternate ${i}`, text }));
-  /* <START> separates example chats in SillyTavern; Nova reads the block as
-     one sample, so the markers become blank lines */
-  const examples = macros(f.mes_example).replace(/^\s*<start>\s*$/gim, "").replace(/\n{3,}/g, "\n\n").trim();
+    .map((text, i) => ({ id: uid(), label: f.greetingLabels?.[i] ?? (i === 0 ? "" : `Alternate ${i}`), text }));
   return {
     id: uid(),
     name: f.name.trim() || "Imported character",
-    description,
+    description: macros(f.description).trim(),
+    scenario: macros(f.scenario).trim(),
+    ...(f.tagline ? { tagline: f.tagline } : {}),
+    ...(f.characterVersion ? { characterVersion: f.characterVersion } : {}),
     personality: macros(f.personality).trim(),
     greetings,
     firstMessage: greetings[0]?.text || "",
-    exampleDialogs: examples,
+    exampleDialogs: macros(f.mes_example).trim(),
     systemPrompt: macros(f.system_prompt).trim(),
     postHistoryInstructions: macros(f.post_history_instructions).trim(),
     ...(lorebook ? { lorebook } : {}),
@@ -251,16 +252,20 @@ export async function importCardFile(file) {
 /* A Nova character as a V2 card: the avatar (or a plain placeholder) as a
    PNG, with the card in a "chara" chunk. Greetings go back out as
    first_mes plus alternate_greetings, the same shape they came in. */
-export async function characterCardPng(ch) {
-  const greets = greetingsOf(ch).map((g) => g.text);
-  const card = {
+export function characterCardJson(ch) {
+  const greetings = greetingsOf(ch);
+  const greets = greetings.map((g) => g.text);
+  const nova = { ...ch.extensions?.nova };
+  if (ch.tagline) nova.tagline = ch.tagline;
+  if (greetings.some((g) => g.label)) nova.greetingLabels = greetings.map((g) => g.label || "");
+  return {
     spec: "chara_card_v2",
     spec_version: "2.0",
     data: {
       name: ch.name || "",
       description: ch.description || "",
       personality: ch.personality || "",
-      scenario: "",
+      scenario: ch.scenario || "",
       first_mes: greets[0] || "",
       alternate_greetings: greets.slice(1),
       mes_example: ch.exampleDialogs || "",
@@ -270,13 +275,18 @@ export async function characterCardPng(ch) {
       ...(toCharacterBook(ch.lorebook) ? { character_book: toCharacterBook(ch.lorebook) } : {}),
       tags: ch.tags || [],
       creator: ch.creator || "",
-      character_version: "",
+      character_version: ch.characterVersion || "",
       extensions: {
         ...(ch.extensions || {}),
-        ...(ch.sprites && Object.keys(ch.sprites).length ? { sprites: ch.sprites } : {}),      },
+        ...(Object.keys(nova).length ? { nova } : {}),
+        ...(ch.sprites && Object.keys(ch.sprites).length ? { sprites: ch.sprites } : {}),
+      },
     },
   };
+}
 
+export async function characterCardPng(ch) {
+  const card = characterCardJson(ch);
   const canvas = document.createElement("canvas");
   /* a card is a PNG, so a video avatar goes out as its first frame */
   const picture = isVideo(ch.avatar) ? await videoStill(ch.avatar).catch(() => "") : ch.avatar;

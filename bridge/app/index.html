@@ -45,19 +45,21 @@
       <div class="card stat"><b id="n-req">0</b><span id="l-req">Replies</span></div>
     </section>
 
-    <section class="card" id="wifi-card" hidden><h2>Phones and tablets</h2>
-      <div class="row"><div class="grow"><b class="addr" id="wifi-addr"></b><small>Nova on a phone finds this computer by itself on the same Wi-Fi. If it does not, open Settings → Providers → Nova Bridge there, tap Enter address and type this.</small></div>
-        <button class="btn sm" id="wifi-copy">Copy</button></div></section>
-
     <section class="card ask" id="pending-card" hidden><h2>New device</h2><div id="pending"></div></section>
 
     <section class="card"><h2>Subscriptions</h2><p class="note">Each one signs in the way that company's own app does. Using a subscription outside its official app can break its terms, and the account can be limited or banned. Use them at your own risk.</p><div id="subs"></div><p class="note" id="sub-status" role="status" hidden></p></section>
+
+    <section class="card" id="wifi-card" hidden><h2>Phone not finding this computer?</h2>
+      <div class="row"><div class="grow"><b class="addr" id="wifi-addr"></b><small>Nova on a phone finds this computer by itself on the same Wi-Fi. If it does not, open Settings → Providers → Nova Bridge there, tap Enter address and type this.</small></div>
+        <button class="btn sm" id="wifi-copy">Copy</button></div></section>
 
     <section class="card"><h2>Devices</h2><div id="sessions"></div><div id="blocked"></div></section>
 
     <section class="card">
       <div class="row"><div class="grow" id="autostart-label">Start with this computer<small id="autostart-note">Off: the Bridge runs only while you have it open.</small></div>
         <button class="switch" id="autostart" role="switch" aria-checked="false" aria-labelledby="autostart-label"><span></span></button></div>
+      <div class="row"><div class="grow" id="tray-label">Keep running in the tray<small id="tray-note"></small></div>
+        <button class="switch" id="tray" role="switch" aria-checked="true" aria-labelledby="tray-label"><span></span></button></div>
     </section>
   </main>
 </div>

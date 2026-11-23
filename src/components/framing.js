@@ -127,6 +127,33 @@ export function useFraming({ stage, k, imgSize, frameRef, initialPos, initialSca
     setPos({ x: 0, y: 0 });
   };
 
+  /* The wheel zooms around the pointer (a mouse or a trackpad's two-finger
+     scroll); the page behind does not scroll. Attached by hand because a
+     React wheel handler is passive and could not stop that. */
+  const sizeRef = useRef(imgSize);
+  sizeRef.current = imgSize;
+  const pointOf = useRef(stagePoint);
+  pointOf.current = stagePoint;
+  useEffect(() => {
+    const el = frameRef.current;
+    if (!el || !imgSize) return undefined;
+    const onWheel = (e) => {
+      e.preventDefault();
+      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+      const factor = Math.exp(-(e.deltaY * unit) * (e.ctrlKey ? 0.01 : 0.0015));
+      const from = scaleRef.current;
+      const next = clamp(from * factor, BG_MIN_ZOOM, BG_MAX_ZOOM);
+      if (next === from) return;
+      const m = pointOf.current(e);
+      const r = next / from;
+      const p = { x: m.x - (m.x - posRef.current.x) * r, y: m.y - (m.y - posRef.current.y) * r };
+      setScale(next);
+      setPos(clampBgPos(p, sizeRef.current, stage, next));
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [imgSize, stage.w, stage.h, k]);
+
   return {
     pos, setPos, scale, setScale, setZoom, reset,
     handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onPointerUp },

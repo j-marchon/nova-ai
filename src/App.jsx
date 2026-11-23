@@ -387,7 +387,11 @@ function Nova({ data, setData }) {
   const goBackFromChat = () => navigate("close", () => setPage(chatOrigin || "history"));
   /* on a wide window a chat opens beside the Chats list, wherever it was
      opened from, and closing it leaves the list */
-  const split = desktop && (page === "chat" || page === "history");
+  const split = desktop && page === "history";
+  /* the chat list is a drawer over an open chat: closed whenever a chat opens */
+  const drawer = desktop && page === "chat";
+  const [listOpen, setListOpen] = useState(false);
+  useEffect(() => { setListOpen(false); }, [page, activeChatId]);
   const navRef = useRef(navigate);
   navRef.current = navigate;
 
@@ -650,15 +654,19 @@ function Nova({ data, setData }) {
   useMotionRoot(motionRoot, data.appearance?.motion || "full");
   const ap = data.appearance;
   /* a skin drawn for one mode (Aero is light) wears it whatever Mode says */
-  /* Look → Skin in chats off: a chat wears Nova's standard look, so it is
-     only the story and its own backdrop; the skin comes back on leaving */
-  const plainChat = page === "chat" && ap.skinInChat === false;
-  const worn = plainChat ? "nova" : skinOf(ap);
+  /* Look → Skin in chats off: the skin stays on everywhere (rail, chat
+     list, dock, sheets, the phone); only the chat itself drops it, on a
+     solid black or white page in Nova's plain look (ChatPage `plain`) */
+  const plainChat = page === "chat" && ap.skinInChat !== true;
+  const worn = skinOf(ap);
   const light = (skinScheme(worn) || scheme) === "light";
   const skin = useSkin(worn);
-  /* its layered scenes, if it has them (Nova's own; a pack's once loaded);
-     a chat in the plain look shows none */
-  const sceneSet = plainChat ? null : worn === "nova" || skin ? sceneSetOf(worn) : null;
+  /* its layered scenes, if it has them (Nova's own; a pack's once loaded).
+     A plain chat on a phone covers the whole screen, so nothing is drawn
+     behind it then (except while a back swipe peeks at the page under it);
+     on a desktop the rail beside it still sits on the scene. */
+  const behindChat = !plainChat || desktop || peek;
+  const sceneSet = !behindChat ? null : worn === "nova" || skin ? sceneSetOf(worn) : null;
   /* the desktop app's Nova Bridge window wears the same skin */
   const skinId = skinOf(ap);
   useEffect(() => { window.novaDesktop?.setSkin?.(skinId); }, [skinId]);
@@ -680,6 +688,7 @@ function Nova({ data, setData }) {
       data-bubbles={ap.bubbles === "aligned" ? "aligned" : "full"}
       data-flow={ap.fx?.flow ? "1" : "0"}
       data-split={split ? "1" : undefined}
+      data-drawer={drawer ? (listOpen ? "open" : "closed") : undefined}
       data-scene={sceneSet ? "1" : undefined}
       style={{
         "--acc": light ? "#000" : "#fff",
@@ -702,7 +711,7 @@ function Nova({ data, setData }) {
       {sceneSet && <LayeredScene scenes={sceneSet.scenes} base={sceneSet.base} sceneId={ap.scenes?.[worn]} invert={worn === "nova" && light} />}
       {/* a skin's own background, behind every screen and behind
           a chat with no backdrop of its own; a picture of your own covers it */}
-      {SkinBackground && <SkinBackground dark={!light} paused={ap.bgPreset === "custom" && !!ap.bgImage && page !== "chat"} />}
+      {SkinBackground && behindChat && <SkinBackground dark={!light} paused={ap.bgPreset === "custom" && !!ap.bgImage && page !== "chat"} />}
 
       {/* The brand bar used to sit here. It was a fixed 56px of the screen
           spent restating the name of the app you are already inside, on a
@@ -740,10 +749,11 @@ function Nova({ data, setData }) {
         <Activity mode={shows("history") ? "visible" : "hidden"}>
           <div className={`${tabClass} nv-tab-history`} ref={page === "history" ? pageEl : undefined}>
             <Suspense fallback={<PageSkeleton />}>
-              <HistoryPage data={desktop && page === "chat" ? data : historyData} update={update} openChat={pageActions.openFromHistory} activeId={split && page === "chat" ? activeChatId : null} />
+              <HistoryPage data={desktop && page === "chat" ? data : historyData} update={update} openChat={pageActions.openFromHistory} activeId={drawer ? activeChatId : null} />
             </Suspense>
           </div>
         </Activity>
+        {drawer && <div className="nv-drawer-scrim" onClick={() => setListOpen(false)} aria-hidden />}
         {/* the right of the Chats list on a wide window, before a chat is open */}
         {split && page === "history" && (
           <div className="nv-split-empty" aria-hidden>
@@ -768,6 +778,9 @@ function Nova({ data, setData }) {
               goSettings={() => navigate("close", () => setPage("settings"))}
               openChat={(id) => setActiveChatId(id)}
               onEdit={pageActions.edit}
+              onToggleList={drawer ? () => setListOpen((v) => !v) : undefined}
+              listOpen={listOpen}
+              plain={plainChat ? (light ? "light" : "dark") : undefined}
             />
           </Suspense>
         )}

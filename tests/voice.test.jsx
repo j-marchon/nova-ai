@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import React, { act, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { cleanTextForSpeech, getVoices, isSpeaking, speak, stopSpeech } from "../src/lib/tts.js";
+import { cleanTextForSpeech, getVoices, isSpeaking, loadVoices, speak, speechProblem, stopSpeech } from "../src/lib/tts.js";
 import { DEFAULT_VOICE_SETTINGS, emptyData } from "../src/lib/data.js";
 import { VoiceSection } from "../src/components/VoiceSection.jsx";
 import { ChatPage } from "../src/pages/ChatPage.jsx";
@@ -189,6 +189,70 @@ describe("TTS speech synthesis engine", () => {
     expect(onEnd).toHaveBeenCalled();
   });
 
+  it("loadVoices waits for voices that arrive after the first call", async () => {
+    mockVoices = [];
+    setTimeout(() => { mockVoices = [{ name: "Late", lang: "en-US", voiceURI: "late" }]; }, 300);
+    const list = await loadVoices(2000);
+    expect(list.map((v) => v.name)).toEqual(["Late"]);
+  });
+
+  it("tells the person when the engine never starts speaking", async () => {
+    vi.useFakeTimers();
+    try {
+      const onError = vi.fn();
+      mockSpeakFn.mockImplementation(() => {}); // an engine that takes the text and stays silent
+      speak("Hello there", { onError });
+      expect(onError).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(9000);
+      expect(onError).toHaveBeenCalledTimes(1);
+      expect(mockCancelFn).toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("does not report a failure once speech has started", () => {
+    vi.useFakeTimers();
+    try {
+      const onError = vi.fn();
+      speak("Hello there", { onError });
+      mockUtteranceInstance.onstart();
+      vi.advanceTimersByTime(20000);
+      expect(onError).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("passes engine errors on, but not a plain cancel", () => {
+    const onError = vi.fn(), onEnd = vi.fn();
+    speak("Hello there", { onError, onEnd });
+    mockUtteranceInstance.onerror({ error: "canceled" });
+    expect(onError).not.toHaveBeenCalled();
+    expect(onEnd).toHaveBeenCalled();
+    speak("Hello again", { onError });
+    mockUtteranceInstance.onerror({ error: "synthesis-failed" });
+    expect(onError).toHaveBeenCalled();
+  });
+
+  it("holds a speak() back a moment after cancelling real speech on the same engine", () => {
+    vi.useFakeTimers();
+    try {
+      speak("First");
+      mockUtteranceInstance.onstart();
+      stopSpeech();
+      mockSpeakFn.mockClear();
+      speak("Second");
+      expect(mockSpeakFn).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(200);
+      expect(mockSpeakFn).toHaveBeenCalledTimes(1);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("names what to install, per platform", () => {
+    const ua = vi.spyOn(navigator, "userAgent", "get");
+    ua.mockReturnValue("Mozilla/5.0 (X11; Linux x86_64) Electron/40");
+    expect(speechProblem()).toMatch(/speech-dispatcher espeak-ng/);
+    ua.mockReturnValue("Mozilla/5.0 (Linux; Android 14) Chrome/120 Mobile");
+    expect(speechProblem()).toMatch(/Text-to-speech/);
+  });
+
   it("stopSpeech cancels synthesis and resets speaking state", () => {
     speak("Testing stop");
     stopSpeech();
@@ -197,6 +261,18 @@ describe("TTS speech synthesis engine", () => {
 });
 
 describe("VoiceSection component", () => {
+  it("shows a one-line reason when the test voice fails", async () => {
+    let utter;
+    window.SpeechSynthesisUtterance = class { constructor(t) { this.text = t; utter = this; } };
+    window.speechSynthesis = { speaking: false, getVoices: () => [], speak: vi.fn(), cancel: vi.fn(), addEventListener: vi.fn(), removeEventListener: vi.fn() };
+    await mount(<VoiceSection voiceSettings={{ ...DEFAULT_VOICE_SETTINGS }} onChange={() => {}} />);
+    const btn = Array.from(host.querySelectorAll("button")).find((b) => b.textContent.includes("Test voice"));
+    await act(async () => btn.click());
+    expect(host.querySelector("[role=alert]")).toBeNull();
+    await act(async () => utter.onerror({ error: "synthesis-failed" }));
+    expect(host.querySelector("[role=alert]")?.textContent).toMatch(/\S/);
+  });
+
   beforeEach(() => {
     window.speechSynthesis = {
       speaking: false,

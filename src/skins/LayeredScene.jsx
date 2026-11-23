@@ -86,9 +86,9 @@ function effectParts(fx, seed) {
           frames: [
             { transform: "translate3d(0, 0, 0)", opacity: 0 },
             { offset: .08, opacity: .9 },
-            { transform: `translate3d(${sway}px, -40vh, 0)`, offset: .4 },
-            { transform: `translate3d(${-sway}px, -80vh, 0)`, offset: .8, opacity: .9 },
-            { transform: "translate3d(0, -115vh, 0)", opacity: 0 },
+            { transform: `translate3d(${sway}px, -40cqh, 0)`, offset: .4 },
+            { transform: `translate3d(${-sway}px, -80cqh, 0)`, offset: .8, opacity: .9 },
+            { transform: "translate3d(0, -115cqh, 0)", opacity: 0 },
           ],
           timing: { duration: secs, delay: -rnd() * secs, iterations: Infinity, easing: "linear" },
         });
@@ -198,8 +198,12 @@ export function LayeredScene({ scenes, sceneId, base = "", invert = false, class
       aria-hidden
       className={`nv-scene ${invert ? "nv-scene--invert" : ""} ${className}`}
       data-ready={ready ? "1" : undefined}
+      /* the stage covers this box, not the viewport: under the app's
+         UI scale (zoom on the root) vw and vh would make it larger than
+         the window, cut more of the picture away and blow it up */
+      style={{ containerType: "size" }}
     >
-      <div className="nv-scene-stage" style={{ width: `max(100vw, calc(100vh * ${aspect}))`, height: `max(100vh, calc(100vw / ${aspect}))` }}>
+      <div className="nv-scene-stage" style={{ width: `max(100cqw, calc(100cqh * ${aspect}))`, height: `max(100cqh, calc(100cqw / ${aspect}))` }}>
         {comp.layers.map((l, i) => {
           const [x, y, w, h] = l.rect;
           const [px, py] = l.pivot || [x + w / 2, y + h / 2];

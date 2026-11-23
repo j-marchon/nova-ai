@@ -5,7 +5,26 @@ import { ChevronRight, Plus, Upload } from "lucide-react";
 import { clamp } from "./theme.jsx";
 import { AccBtn, Button, Field, PickRow, TextArea, TextInput, Toggle } from "./ui.jsx";
 import { activeModel, endpointFor, sentSampler } from "../lib/api.js";
-import { DEFAULT_STYLE, STYLE_PRESETS, STYLE_TUNING, activeCustomStyle, activePreset, customStyleList, parseStyleImport, samplerPreset, savedTuning, styleDefaults, styleTuning, thinkingOn, withThinking, withTuning } from "../lib/styles.js";
+import { DEFAULT_STYLE, STYLE_PRESETS, outputLimit, STYLE_TUNING, activeCustomStyle, activePreset, customStyleList, parseStyleImport, samplerPreset, savedTuning, styleDefaults, stylePrompt, styleTuning, thinkingOn, withThinking, withTuning } from "../lib/styles.js";
+import { estimateTokens, formatTokens, styleTokens } from "../lib/tokens.js";
+
+/* counted once per saved prompt: the list redraws while a slider moves */
+const SIZES = new WeakMap();
+const sizeOf = (c) => {
+  if (!c) return 0;
+  if (!SIZES.has(c)) SIZES.set(c, styleTokens(c));
+  return SIZES.get(c);
+};
+
+/* How much a prompt adds to every request, beside its name. Nothing for none. */
+function PromptSize({ tokens }) {
+  if (!tokens) return null;
+  return (
+    <span className="shrink-0 text-[11px] tabular-nums" style={{ opacity: .6 }} data-prompt-tokens={tokens} title={`About ${tokens} tokens sent with every reply`}>
+      ~{formatTokens(tokens)}
+    </span>
+  );
+}
 
 /* One fine-tuning value: a slider for feel, and a box for typing an exact
    number, since 0.95 is hard to land on with a thumb. The box keeps its own
@@ -237,7 +256,7 @@ export function StyleTuner({ settings, preset, onChange }) {
         <div>
           <div className={`px-3.5 pb-3.5 space-y-3 border-t border-[var(--nv-line)] pt-3 ${tune.on ? "" : "opacity-40 pointer-events-none"}`}>
             {STYLE_TUNING.map((f) => (
-              <TuneRow key={f.key} field={f} value={tune[f.key]} onChange={(v) => save({ [f.key]: v })} />
+              <TuneRow key={f.key} field={f.key === "max_tokens" ? { ...f, max: outputLimit(model) } : f} value={tune[f.key]} onChange={(v) => save({ [f.key]: v })} />
             ))}
             <AdvancedSamplersSection values={tune} onChange={(patch) => save(patch)} disabled={!tune.on} />
             {src === "openrouter" && (
@@ -295,7 +314,7 @@ export function GenSettings({ settings, styleId }) {
     sent.max_tokens != null ? `${fmt(sent.max_tokens)} tokens` : "",
   ].filter(Boolean).join(" · ");
   return (
-    <div className="ml-3 rounded-xl border border-[var(--nv-line)] bg-[var(--nv-control)]">
+    <div className="rounded-xl border border-[var(--nv-line)] bg-[var(--nv-control)]">
       <button
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center gap-2 px-3 py-1.5 text-left"
@@ -355,13 +374,16 @@ export function StyleChips({ settings, onChange }) {
             onPick={() => onChange({ ...settings, stylePreset: p.id }, !p.custom)}
             leading={<span className="w-2 h-2 rounded-full shrink-0" style={{ background: "var(--acc)", opacity: on ? 1 : 0.35 }} />}
             title={<>
-              <span className="flex-1 min-w-0">{p.name}</span>
+              <span className="min-w-0 truncate">{p.name}</span>
+              {/* Your prompts, closed: the size of the one it would use */}
+              <PromptSize tokens={p.custom ? (on ? 0 : sizeOf(activeCustomStyle(settings))) : estimateTokens(stylePrompt(p))} />
+              <span className="flex-1" />
               {p.id === DEFAULT_STYLE && <span className="text-[10px] shrink-0" style={{ opacity: .7 }}>default</span>}
               {savedTuning(settings, p.id)?.on && <span className="text-[10px] shrink-0">tuned</span>}
             </>}
             sub={on && p.desc ? p.desc : null}
           />
-          {on && <GenSettings settings={settings} styleId={p.id} />}
+          {on && !p.custom && <GenSettings settings={settings} styleId={p.id} />}
           {p.custom && on && <CustomStyles settings={settings} onChange={onChange} />}
           </React.Fragment>
         );
@@ -383,16 +405,23 @@ export function StyleChips({ settings, onChange }) {
   );
 }
 
-/* What an imported SillyTavern preset brought besides its text: blocks
-   placed deeper in the chat, and its prompt-only and display regex scripts
-   (tavern.js, html.js). */
+/* What an imported SillyTavern preset brought besides its text, as the
+   plain list the editor shows: what it is, and where it goes. */
+const SECTION_NAMES = { worldInfoBefore: "World info", worldInfoAfter: "World info", personaDescription: "Your persona", charDescription: "Character", charPersonality: "Personality", scenario: "Scenario", dialogueExamples: "Examples" };
 function draftExtras(d) {
   const n = (k) => (Array.isArray(d[k]) ? d[k].length : 0);
+  const sections = [...new Set((d.layout || []).filter((x) => x.marker).map((x) => SECTION_NAMES[x.marker]).filter(Boolean))];
   return [
-    n("inject") ? `${n("inject")} in-chat block${n("inject") > 1 ? "s" : ""}` : "",
-    n("regex") ? `${n("regex")} prompt regex script${n("regex") > 1 ? "s" : ""} (trims what is sent, not what you see)` : "",
-    n("display") ? `${n("display")} display regex script${n("display") > 1 ? "s" : ""} (styles the bubbles, shows the model's HTML)` : "",
-  ].filter(Boolean).join(", ");
+    d.text?.trim() ? "Prompt blocks · system prompt" : "",
+    sections.length ? `Section order · ${sections.join(", ")}` : "",
+    d.post?.trim() ? "Post-history block · after the newest message" : "",
+    n("inject") ? `${n("inject")} in-chat block${n("inject") > 1 ? "s" : ""} · inserted by depth` : "",
+    d.modes?.impersonate ? "Impersonate prompt · when writing your message" : "",
+    d.modes?.continue ? "Continue blocks · when continuing a reply" : "",
+    n("regex") ? `${n("regex")} prompt regex${n("regex") > 1 ? "es" : ""} · applied to what is sent` : "",
+    n("display") ? `${n("display")} display regex${n("display") > 1 ? "es" : ""} · applied to bubbles, HTML kept` : "",
+    n("saved") ? `${n("saved")} saved-message regex${n("saved") > 1 ? "es" : ""} · applied to replies as saved` : "",
+  ].filter(Boolean);
 }
 
 /* The settings an editor draft carries, as one line, or "" */
@@ -452,7 +481,7 @@ export function CustomStyles({ settings, onChange }) {
       const maxTokens = found ? x.maxTokens : draft.maxTokens;
       /* A SillyTavern preset pasted in brings its own after-chat blocks and
          regex; plain text keeps the ones this prompt already has. */
-      const st = x.post || x.inject || x.regex || x.display ? x : draft;
+      const st = x.post || x.inject || x.regex || x.display || x.saved || x.layout || x.modes ? x : draft;
       commit([{
         id: draft.id || newId(),
         /* a name typed in the box wins over one found in the JSON */
@@ -465,6 +494,10 @@ export function CustomStyles({ settings, onChange }) {
         ...(st.inject?.length ? { inject: st.inject } : {}),
         ...(st.regex?.length ? { regex: st.regex } : {}),
         ...(st.display?.length ? { display: st.display } : {}),
+        ...(st.saved?.length ? { saved: st.saved } : {}),
+        ...(st.layout?.length ? { layout: st.layout } : {}),
+        ...(st.modes ? { modes: st.modes } : {}),
+        ...(st.formats ? { formats: st.formats } : {}),
         importedAt: Date.now(),
       }]);
     } catch (e) {
@@ -493,7 +526,7 @@ export function CustomStyles({ settings, onChange }) {
         name: !x.text ? d.name : x.name,
         text: x.text || d.text,
         /* a new prompt replaces the old one's after-chat blocks and regex */
-        ...(x.text ? { post: x.post, inject: x.inject, regex: x.regex, display: x.display } : {}),
+        ...(x.text ? { post: x.post, inject: x.inject, regex: x.regex, display: x.display, saved: x.saved, layout: x.layout, modes: x.modes, formats: x.formats } : {}),
         /* a file with no settings leaves the open prompt's own in place */
         ...(x.sampler || x.temperature != null || x.maxTokens != null
           ? { sampler: x.sampler, temperature: x.temperature, maxTokens: x.maxTokens }
@@ -540,16 +573,13 @@ export function CustomStyles({ settings, onChange }) {
           />
         </Field>
       )}
-      {draftExtras(draft) && (
-        <p className="text-[11px] text-zinc-500 leading-snug">
-          Also imported: {draftExtras(draft)}. Blocks meant for impersonation, continue or background requests, and regex that rewrites saved messages, are left out.{" "}
-          <button
-            className="underline hover:text-zinc-300"
-            onClick={() => setDraft({ ...draft, inject: undefined, regex: undefined, display: undefined })}
-          >
-            Remove
-          </button>
-        </p>
+      {draftExtras(draft).length > 0 && (
+        <div className="text-[11px] text-zinc-500 leading-snug">
+          <p className="nv-label mb-1">Imported</p>
+          <ul className="space-y-0.5">
+            {draftExtras(draft).map((line) => <li key={line}>{line}</li>)}
+          </ul>
+        </div>
       )}
       {draftSettings(draft) && (
         <p className="text-[11px] text-zinc-500 leading-snug">Generation settings: {draftSettings(draft)}</p>
@@ -596,14 +626,18 @@ export function CustomStyles({ settings, onChange }) {
                 ? (onChange({ ...settings, customStyleId: c.id }, false), open({ id: c.id, name: c.name, text: "" }))
                 : onChange(withThinking({ ...settings, stylePreset: "custom", customStyleId: c.id }, c.thinking || thinkingOn(settings)))
             }
-            title={c.name}
+            title={<>
+              <span className="min-w-0 truncate">{c.name}</span>
+              <PromptSize tokens={sizeOf(c)} />
+            </>}
             sub={empty ? "Text not added yet — tap to paste it or load a file" : c.text.trim().slice(0, 160)}
             editLabel={c.name}
-            onEdit={() => open({ id: c.id, name: c.name, text: c.text || "", sampler: c.sampler, temperature: c.temperature, maxTokens: c.maxTokens, post: c.post, inject: c.inject, regex: c.regex, display: c.display })}
+            onEdit={() => open({ id: c.id, name: c.name, text: c.text || "", sampler: c.sampler, temperature: c.temperature, maxTokens: c.maxTokens, post: c.post, inject: c.inject, regex: c.regex, display: c.display, saved: c.saved, layout: c.layout, modes: c.modes, formats: c.formats })}
             onRemove={() => remove(c.id)}
           >
             {meta && <span className="block text-[10px] mt-0.5" style={{ opacity: .7 }}>{meta}</span>}
           </PickRow>
+          {on && !draft && usable && <GenSettings settings={settings} styleId="custom" />}
           {draft?.id === c.id && editor()}
           </React.Fragment>
         );

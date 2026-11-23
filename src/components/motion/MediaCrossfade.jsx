@@ -3,7 +3,7 @@ import { MOTION, motionMode, onMotionChange, set, stop, tween } from "./runtime.
 
 // Keep the previous media visible until its replacement is decoded. Each layer
 // owns opacity independently of user-controlled media opacity and framing.
-export function MediaCrossfade({ identity, children, className = "", style }) {
+export function MediaCrossfade({ identity, children, className = "", style, duration = .7, ease = "power2.out" }) {
   const [layers, setLayers] = useState({ identity, current: children, previous: null });
   const host = useRef(null);
   if (identity !== layers.identity) setLayers({ identity, current: children, previous: layers.previous || layers.current });
@@ -18,8 +18,8 @@ export function MediaCrossfade({ identity, children, className = "", style }) {
       if (!alive) return;
       const full = motionMode() === "full";
       if (full) set(incoming, { scale: 1.04 });
-      tween(incoming, { opacity: 1, ...(full ? { scale: 1, clearProps: "transform" } : {}), duration: full ? .7 : 0, ease: "power2.out" });
-      tween(outgoing, { opacity: 0, duration: full ? .7 : 0, ease: "power2.out", onComplete: finish });
+      tween(incoming, { opacity: 1, ...(full ? { scale: 1, clearProps: "transform" } : {}), duration: full ? duration : 0, ease });
+      tween(outgoing, { opacity: 0, duration: full ? duration : 0, ease, onComplete: finish });
     };
     set(incoming, { opacity: motionMode() === "full" ? 0 : 1 });
     const media = [...incoming.querySelectorAll("img,video")];

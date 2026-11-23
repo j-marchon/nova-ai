@@ -83,7 +83,7 @@ function dataUrl(bytes, type) {
 function unpack(input) {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
   if (!bytes.length) fail("That file is empty.");
-  if (bytes.length > MAX_ZIP_BYTES) fail("That skin is larger than Nova accepts (12 MB).");
+  if (bytes.length > MAX_ZIP_BYTES) fail(`That skin is larger than Nova accepts (${MAX_ZIP_BYTES / 1048576} MB).`);
   if (bytes[0] !== 0x50 || bytes[1] !== 0x4b) fail("That file is not a skin. Skins are .zip files.");
   let total = 0, count = 0;
   let raw;

@@ -17,7 +17,7 @@ import { ChatBackdrop } from "../src/components/backdrops.jsx";
 import { Avatar } from "../src/components/ui.jsx";
 import { isVideo, isVideoFile } from "../src/lib/video.js";
 import { emptyData } from "../src/lib/data.js";
-import { paramLines, cardSystem, AI_SCHEMAS } from "../src/components/AiFill.jsx";
+import { AI_SCHEMAS } from "../src/components/AiFill.jsx";
 import { activity, clearActivity, startActivity } from "../src/lib/activity.js";
 import { version } from "../package.json";
 import { resetStorageForTests } from "../src/lib/storage.js";
@@ -153,7 +153,7 @@ describe("chat", () => {
     expect(byLabel("More")).toBeFalsy();
     expect(byLabel("Change persona")).toBeFalsy();
     await click(byLabel("Chat settings"));
-    for (const label of ["Persona", "Look", "Memory", "Notes", "Bookmarks", "Scene art", "Tokens", "Export"]) {
+    for (const label of ["Persona", "Look", "Memory", "Quick tweaks", "Bookmarks", "Scene art", "Tokens", "Export"]) {
       expect(row(label)).toBeTruthy();
     }
     expect(row("Author's note")).toBeFalsy();
@@ -357,14 +357,12 @@ describe("several of your characters in one chat", () => {
     expect(Harness.data.chats[0].scope.cast.at(-1)).toMatchObject({ name: "Tom", characterId: "c2", description: "" });
   });
 
-  it("lists the chat under its title, or its first person's name with the rest behind a +", async () => {
+  it("lists the chat under its title, or everyone's names, with no button that opens a list", async () => {
     await mount(<Harness initial={seed([ensemble({ title: "The Crew" }), ensemble({ id: "g2" })])} render={(data, update) => <HistoryPage data={data} update={update} openChat={() => {}} />} />);
     expect(textOf()).toContain("The Crew");
-    expect(textOf()).not.toContain("Mira, Tom");
-    const plus = host.querySelectorAll('button[aria-label="1 more: Mira, Tom"]');
-    expect(plus).toHaveLength(2);
-    await click(plus[1]);
-    expect([...document.body.querySelectorAll("li")].map((li) => li.textContent)).toEqual(expect.arrayContaining(["Mira", "Tom"]));
+    expect(textOf()).toContain("Mira, Tom");
+    expect(host.querySelectorAll('button[aria-label*="more:"]')).toHaveLength(0);
+    expect(host.querySelectorAll('[data-scope="1"]')).toHaveLength(2);
   });
 
   it("lets a universe's characters or its narration lead, with Scope off", async () => {
@@ -423,7 +421,7 @@ describe("screens", () => {
   it("renders Settings and the character form", async () => {
     await mount(<Harness initial={seed([])} render={(data, update) => <SettingsPage data={data} update={update} />} />);
     await click([...host.querySelectorAll("button")].find((b) => b.textContent === "Memory"));
-    expect(textOf()).toContain("Long-term memory");
+    expect(textOf()).toContain("Story summary");
     expect(textOf()).toContain(`Nova ${shortVersion(version)}`);
 
     await mount(<CharacterForm initial={mira} settings={emptyData.settings} onSave={() => {}} onSettings={() => {}} onClose={() => {}} />);
@@ -700,7 +698,7 @@ describe("card studio", () => {
   const studioRow = () => all().find((b) => b.t.startsWith("Card studio"));
   const studioPanel = () => document.querySelector('section[aria-label^="Card studio · "]');
   const openStudio = async () => { if (!studioPanel()) await click(studioRow()); };
-  const fullCharacter = { name: "Edda", tagline: "Old tagline", description: "A keeper.", greetings: [{ label: "", text: "*Fog.* Who's there?" }], exampleDialogs: "{{user}}: Hi\n{{char}}: No." };
+  const fullCharacter = { name: "Edda", tagline: "Old tagline", description: "A keeper.", personality: "Protective.", scenario: "A storm.", greetings: [{ label: "", text: "*Fog.* Who's there?" }], exampleDialogs: "{{user}}: Hi\n{{char}}: No." };
   const fullUniverse = { name: "Vale", tagline: "A valley", story: "A valley.", rules: "None.", greetings: [{ label: "", text: "*Mist.*" }], characters: [{ name: "Elder", description: "Old.", personality: "Kind" }], locations: [{ name: "Mill", description: "Loud." }] };
 
   it("writes a character into the form, rewrites one part, and saves", async () => {
@@ -766,7 +764,7 @@ describe("card studio", () => {
     expect(activity.get().filter((j) => j.owner.cardKind)).toHaveLength(0);
   });
 
-  it("ignores stale parameters and saves only the brief and detail", async () => {
+  it("ignores stale parameters and saves the studio preferences", async () => {
     const settings = studioSettings();
     settings.cardStudio = { personas: { brief: "A keeper.", params: { cast: 8, length: "Concise", name: "Wrong" } } };
     const onSettings = vi.fn();
@@ -775,10 +773,8 @@ describe("card studio", () => {
     await openStudio();
     await click(all().find((b) => b.t === "Write the persona"));
     await flush();
-    expect(onSettings).toHaveBeenCalledWith({ cardStudio: { personas: { brief: "A keeper.", detail: "medium" } } });
-    expect(paramLines()).toEqual([]);
+    expect(onSettings).toHaveBeenCalledWith({ cardStudio: { personas: { brief: "A keeper.", interview: false, promptMode: "default" } } });
     expect(requests[0].messages[1].content).not.toContain("Wrong");
-    for (const schema of Object.values(AI_SCHEMAS)) expect(cardSystem(schema)).toContain("The brief decides");
   });
 
   it.each([false, true])("repairs broken JSON once (repair fails: %s)", async (fails) => {
@@ -1060,7 +1056,7 @@ describe("Nova Scope", () => {
      await mount(<Harness initial={seed([])} render={(data, update) => <SettingsPage data={data} update={update} />} />);
      const button = (text) => [...host.querySelectorAll("button")].find((b) => b.textContent.trim() === text);
      await click(button("Memory"));
-     await click([...host.querySelectorAll("button")].find((b) => b.textContent.includes("Recall related messages")));
+     await click([...host.querySelectorAll("button")].find((b) => b.textContent.includes("Recall")));
      expect(Harness.data.settings.ragOn).toBe(true);
      await click(button("Replies"));
      await click([...host.querySelectorAll("button")].find((b) => b.textContent.includes("Translate new replies")));

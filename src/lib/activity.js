@@ -15,6 +15,7 @@ import { activeModel, sourceOf } from "./api.js";
 import { modelLabel } from "./models.js";
 
 export const PERCENT_MS = 250;   /* percent emits: about 4 per second */
+export const ERROR_LINGER_MS = 30000; /* a failure shown on the island goes by itself after this */
 export const LINGER_MS = 2500;   /* a finished job stays for its completion animation */
 
 let jobs = [];
@@ -118,7 +119,7 @@ function handleFor(id, controller) {
       if (controller.signal.aborted || err?.name === "AbortError") { drop(id); return; }
       patch(id, { status: "error", error: message(err), endedAt: Date.now() });
       /* nothing shows a quiet failure or offers its X, so it leaves by itself */
-      if (find(id).quiet) timers.set(id, setTimeout(() => drop(id), LINGER_MS));
+      timers.set(id, setTimeout(() => drop(id), find(id).quiet ? LINGER_MS : ERROR_LINGER_MS));
     },
     cancel() {
       if (!live()) return;
@@ -200,6 +201,11 @@ export function takeActivityResult(id) {
   if (!job) return undefined;
   drop(id);
   return job.result;
+}
+
+/* Interview answers belong to the held job, even if its form closes. */
+export function updateActivityResult(id, result) {
+  if (find(id)?.status === "done") patch(id, { result });
 }
 
 /* The island asks for a job's screen to open. A screen that mounts later

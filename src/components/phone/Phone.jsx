@@ -281,10 +281,9 @@ export function Phone({ chat, data, persona, userName, character, ensemble, univ
       <div ref={scrim} aria-hidden className="nv-phone-scrim absolute inset-0 hidden min-[480px]:block" onClick={() => leave(false)} />
       <div
         ref={device}
-        className="nv-ios-device relative flex flex-col w-full h-full overflow-hidden min-[480px]:w-[390px] min-[480px]:h-[800px] min-[480px]:max-h-[calc(100%-2rem)]"
+        className="nv-ios-device relative flex flex-col w-full h-full overflow-hidden min-[480px]:w-[390px] min-[480px]:h-[800px] min-[480px]:max-h-[calc(100%-2rem)] min-[1024px]:w-[460px] min-[1024px]:h-[940px]"
         style={{ background: "var(--nv-bg)", color: "var(--nv-ink)", ...(zoom > 1 ? { zoom, maxHeight: `calc((100% - 2rem) / ${zoom})` } : null) }}
       >
-        <span aria-hidden className="nv-ios-island hidden min-[480px]:block" />
         {/* the one top row: back (every page but home), whose phone (a
             button to the persona's profile), the story's time and place,
             Refresh with its step on the home screen, and Close. No app bar:
@@ -320,7 +319,12 @@ export function Phone({ chat, data, persona, userName, character, ensemble, univ
           {depth <= 1 && (head.when || head.place) && (
             <span className="truncate min-w-0 max-w-[40%]" data-testid="phone-scene">{[head.when, head.place].filter(Boolean).join(" · ")}</span>
           )}
-          {busy && <span role="status" aria-label="Updating" className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: "var(--nv-ink)" }} />}
+          {busy && (
+            <span role="status" aria-label="Updating" className="nv-live relative inline-flex w-2.5 h-2.5 shrink-0">
+              <span aria-hidden className="nv-live-ring absolute inset-0 rounded-full" />
+              <span aria-hidden className="relative w-2.5 h-2.5 rounded-full" style={{ background: "var(--nv-ink)" }} />
+            </span>
+          )}
           {homeTop && (
             <StepMenu steps={PHONE_STEPS} value={step} onChange={(id) => onHandset((x) => setRefreshStep(x, id))} label="Refresh step" />
           )}

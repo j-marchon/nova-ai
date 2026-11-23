@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Android 11+ hides apps from each other unless asked for: the text-to-speech engine, for Read aloud. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
     <!-- WebView connects to user-selected LAN model servers. Provider transports enforce HTTPS for remote addresses. -->
     <application
         android:allowBackup="false"

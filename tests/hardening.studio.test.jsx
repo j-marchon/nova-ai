@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /* Card Studio: the inline dropdown in every create form. Writes straight
    into the form with an Undo, one part at a time once there is content,
-   the detail level reaches the request, jobs survive closing and are offered
+   interview answers reach the request, jobs survive closing and are offered
    on reopen, JSON repair and continue still work, and the writer picker is
    there on every provider. */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -87,7 +87,7 @@ const settingsFor = (preset = "openrouter", extra = {}) => {
 };
 
 const sample = {
-  characters: { name: "Edda", tagline: "Keeps the light", description: "A keeper.", greetings: [{ label: "Fog", text: "*Fog.* Who's there?" }], exampleDialogs: "{{user}}: Hi\n{{char}}: No." },
+  characters: { name: "Edda", tagline: "Keeps the light", description: { appearance: "Ink-stained hands." }, personality: { shortGoals: "Keep the lamp burning." }, scenario: "A storm.", greetings: [{ label: "Fog", text: "*Fog.* Who's there?" }], exampleDialogs: "{{user}}: Hi\n{{char}}: No." },
   personas: { name: "Ana", description: "A correspondent." },
   universes: { name: "Vale", tagline: "A valley", story: "Long ago.", rules: "No magic.", greetings: [{ label: "Dawn", text: "*Mist.*" }], characters: [{ name: "Elder", description: "Old.", personality: "Kind" }], locations: [{ name: "Mill", description: "Loud." }] },
 };
@@ -158,17 +158,73 @@ describe("the dropdown", () => {
     expect(button("Write the character").disabled).toBe(true);
   });
 
-  it("restores the saved brief and detail, and saves both per kind", async () => {
+  it("loads a custom text file and keeps it when another file is empty", async () => {
     const onSettings = vi.fn();
-    const s = settingsFor("openrouter", { cardStudio: { characters: { brief: "Saved brief.", detail: "high", params: { stale: 1 } }, personas: { brief: "Other." } } });
+    await mount(form("characters", { onSettings }));
+    await click(toggle());
+    await click(button("Custom"));
+    const input = panel().querySelector('input[type="file"]');
+    const choose = async (text) => {
+      Object.defineProperty(input, "files", { configurable: true, value: [{ text: async () => text }] });
+      await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+    };
+    await choose("Give her a promise to keep.");
+    await choose(" ");
+    expect(panel().querySelector('[role="alert"]').textContent).toContain("empty");
+    expect(panel().querySelectorAll("textarea")[1].value).toBe("Give her a promise to keep.");
+    expect(onSettings.mock.lastCall[0].cardStudio.characters.customPrompt).toBe("Give her a promise to keep.");
+  });
+
+  it("restores a brief from older settings and saves prompt and interview choices per kind", async () => {
+    vi.stubGlobal("fetch", route(() => ({ reply: sample.characters })));
+    const onSettings = vi.fn();
+    const s = settingsFor("openrouter", { cardStudio: { characters: { brief: "Saved brief.", detail: "high" }, personas: { brief: "Other." } } });
     await mount(form("characters", { settings: s, onSettings }));
     await click(toggle());
     expect(briefBox().value).toBe("Saved brief.");
-    expect(button("High").getAttribute("aria-checked")).toBe("true");
-    await click(button("Low"));
-    expect(onSettings).toHaveBeenLastCalledWith({ cardStudio: { characters: { brief: "Saved brief.", detail: "low" }, personas: { brief: "Other." } } });
+    expect(button("High")).toBeUndefined();
+    await click(panel().querySelector('[role="switch"]'));
+    await click(button("Custom"));
+    const custom = panel().querySelectorAll("textarea")[1];
+    await type(custom, "Start with a debt.");
     await click(button("Write the character"));
-    expect(onSettings).toHaveBeenCalledWith({ cardStudio: { characters: { brief: "Saved brief.", detail: "low" }, personas: { brief: "Other." } } });
+    expect(onSettings).toHaveBeenLastCalledWith({ cardStudio: {
+      characters: { brief: "Saved brief.", interview: true, promptMode: "custom", customPrompt: "Start with a debt." },
+      personas: { brief: "Other." },
+    } });
+    expect(requests[0].messages[0].content).toContain("Start with a debt.");
+    expect(requests[0].messages[0].content).not.toContain("A ferryman");
+  });
+});
+
+describe("manual character template", () => {
+  it("edits repeated entries, switches views, and reopens saved fields alongside old prose", async () => {
+    let saved;
+    const initial = { id: "old", name: "Ada", description: "Original bio.", personality: "An old opinion.", exampleDialogs: "{{user}}: Hi\n{{char}}: Hello." };
+    await mount(form("characters", { initial, onSave: (v) => { saved = v; } }));
+    await click(button("Advanced"));
+    const area = (name) => [...document.querySelectorAll("label")].find((l) => l.querySelector(".nv-label")?.textContent === name)?.querySelector("textarea");
+    expect(area("Preliminary notes").value).toBe(initial.description);
+    expect(area("Personality notes").value).toBe(initial.personality);
+    await type(area("My story"), "She left at dawn.");
+    await type(document.querySelector('[aria-label="Likes 1"]'), "Bus tickets");
+    await click(button("Add like"));
+    await type(document.querySelector('[aria-label="Likes 2"]'), "Night trains");
+    await click(document.querySelector('[aria-label="Remove like 1"]'));
+    await click(button((t) => t.startsWith("Metadata")));
+    await type(document.querySelector('[aria-label="Tags 1"]'), "railway");
+    await type(area("Scenario"), "The ticket office is closing.");
+    await click(button("Advanced"));
+    expect(area("Description").value).toContain("She left at dawn.");
+    await click(button("Save"));
+    expect(saved.tags).toEqual(["railway"]);
+    expect(saved.exampleDialogs).toBe(initial.exampleDialogs);
+    expect(saved.scenario).toBe("The ticket office is closing.");
+    await mount(form("characters", { key: "reopened", initial: saved }));
+    await click(button("Advanced"));
+    expect(area("My story").value).toBe("She left at dawn.");
+    expect(area("Personality notes").value).toBe(initial.personality);
+    expect(document.querySelector('[aria-label="Likes 1"]').value).toBe("Night trains");
   });
 });
 
@@ -190,30 +246,40 @@ describe("writing into the form", () => {
     expect(inputs().some((i) => i.value === sample[kind].name)).toBe(false);
   });
 
-  it("sends the chosen detail level as budget and effort", async () => {
-    vi.stubGlobal("fetch", route(() => ({ reply: sample.personas })));
-    for (const [level, max] of [["Low", 3000 + 2000], ["Medium", 8000 + 4000], ["High", 16000 + 8000]]) {
-      requests.length = 0;
-      clearActivity();
-      await mount(form("personas", { key: level }));
-      await click(toggle());
-      await click(button(level));
-      await writeNew();
-      expect(requests[0].max_tokens, level).toBe(max);
-      expect(requests[0].reasoning, level).toEqual({ effort: level.toLowerCase() });
-      expect(requests[0].messages[0].content).toContain(`Detail level: ${level}`);
-    }
+  it("keeps an interview and its answers on reopen, then fills the advanced fields", async () => {
+    const question = "Who would Edda disappoint if she let the light go out?";
+    vi.stubGlobal("fetch", route((body, n) => ({ reply: n === 1 ? { questions: [question] } : sample.characters })));
+    let saved;
+    await mount(form("characters"));
+    await click(toggle());
+    await click(panel().querySelector('[role="switch"]'));
+    await writeNew("A keeper.");
+    expect(lastToast()).toBeUndefined();
+    expect(panel().textContent).toContain(question);
+    await type(briefBox(), "Her sister.");
+    await mount(<div />);
+    await mount(form("characters", { onSave: (v) => { saved = v; } }));
+    expect(briefBox().value).toBe("Her sister.");
+    await click(button("Finish card"));
+    expect(requests).toHaveLength(2);
+    expect(requests[1].messages.at(-1).content).toContain(question);
+    expect(requests[1].messages.at(-1).content).toContain("Her sister.");
+    expect(requests[1].messages.at(-1).content).toContain("A keeper.");
+    expect(requests[1].messages[0].content).not.toContain('{"questions":');
+    await click(button("Advanced"));
+    expect(areas().some((t) => t.value === "Ink-stained hands.")).toBe(true);
+    expect(areas().some((t) => t.value === "Keep the lamp burning.")).toBe(true);
+    await click(button("Save"));
+    expect(saved.scenario).toBe("A storm.");
+    expect(saved.personality).toContain("Keep the lamp burning.");
   });
 
-  it("with thinking off, asks for a <plan> block and gives it room, and strips it from the reply", async () => {
-    vi.stubGlobal("fetch", route(() => ({ reply: '<plan>Brief wants {a keeper}. Plan: name, then description.</plan>\n{"name":"Ana","description":"A correspondent."}' })));
-    await mount(form("personas", { settings: settingsFor("openrouter", { writerThinking: false }) }));
+  it("writes directly when the interview-enabled model has enough context", async () => {
+    vi.stubGlobal("fetch", route(() => ({ reply: sample.characters })));
+    await mount(form("characters", { settings: settingsFor("openrouter", { cardStudio: { characters: { interview: true } } }) }));
     await writeNew();
     expect(requests).toHaveLength(1);
-    expect(requests[0].messages[0].content).toContain("<plan>");
-    expect(requests[0].reasoning).toEqual({ enabled: false });
-    expect(requests[0].max_tokens).toBe(8000 + 1500);
-    expect(inputs().some((i) => i.value === "Ana")).toBe(true);
+    expect(lastToast().text).toBe("Card written");
   });
 
   it("an edit made while the job runs is restored by Undo after a whole-card write", async () => {
@@ -534,16 +600,16 @@ describe("writer model on every provider, no Gemma", () => {
     }
   });
 
-  it("picking a model saves the writer, and the thinking switch saves writerThinking", async () => {
+  it("picking a model saves the writer for this provider", async () => {
     const onSettings = vi.fn();
     const s = settingsFor("groq");
     s.providers[0].favorites = ["vendor/fav-model"];
     await mount(<AiFill kind="personas" current={{ name: "Edda" }} settings={s} onFill={() => {}} onSettings={onSettings} />);
     await click(toggle());
-    await click(document.querySelector('[role="switch"][aria-checked="true"]'));
-    expect(onSettings).toHaveBeenCalledWith({ writerThinking: false });
     await click(button((t) => t.startsWith("Written by")));
     expect(body()).toContain("Choose a model");
+    /* the picker opens on Models; the starred one is under Favorites */
+    await click(button("Favorites"));
     await click(button("vendor/fav-model"));
     expect(onSettings).toHaveBeenCalledWith({ writerModels: { [s.providers[0].id]: "vendor/fav-model" } });
   });
