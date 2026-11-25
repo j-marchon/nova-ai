@@ -136,7 +136,7 @@ describe("Bridge limits in the Usage tab", () => {
   it("points to the Providers tab when nothing is connected", async () => {
     fetchMock.mockImplementation(async () => json({ object: "usage", providers: {} }));
     await openUsage();
-    expect(host.textContent).toContain("Connect a subscription in Settings → Providers → Nova Bridge.");
+    expect(host.textContent).toContain("Connect a subscription in Settings → Nova Bridge.");
   });
 
   it("shows a rejected device and recovers on Refresh", async () => {

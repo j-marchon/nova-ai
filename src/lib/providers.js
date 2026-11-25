@@ -188,7 +188,7 @@ export const PROVIDERS = [
      device. */
   {
     id: "nova-bridge",
-    name: "Nova Bridge (Subscriptions)",
+    name: "Nova Bridge",
     tag: "Recommended",
     base: "http://localhost:5005/v1",
     keyPlaceholder: "Optional",
@@ -276,6 +276,7 @@ export function newProvider(presetId, extra = {}, existing = []) {
   };
 }
 
+/* normalizeData adds Nova Bridge in front of these, on every load */
 export const DEFAULT_PROVIDERS = [newProvider("openrouter")];
 
 /* The provider in use, or null when every one has been removed. */

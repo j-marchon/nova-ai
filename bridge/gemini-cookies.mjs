@@ -6,14 +6,15 @@
 
    1. Firefox: the Google cookies of a Firefox profile already signed in to
       Google are read from its cookies.sqlite. No sign-in needed.
-   2. Chrome, Edge, Brave or Chromium: the real browser is started with its own
-      saved profile (never the user's everyday one) and a local DevTools port.
-      The user signs in normally; the Bridge reads the cookies over DevTools
-      and closes it. A later run is already signed in.
+   2. Chrome, Edge, Brave or Chromium, with its own saved profile (never the
+      user's everyday one). Google refuses to sign in a browser that has a
+      DevTools port open ("This browser or app may not be secure"), so the
+      sign-in happens in a plain window of that browser, without one; once
+      the user closes it, the same profile is opened again, unseen, with a
+      local DevTools port only to read its cookies. A later run is already
+      signed in and opens no window at all.
 
-   Google refuses sign-in in a browser started this way too (the sign-in page
-   says "This browser or app may not be secure"), so step 2 only works when
-   Google lets it through; Learn models never signs in there at all: it puts
+   Learn models never signs in there at all: it puts
    the Bridge's saved Google cookies into that browser and opens Gemini signed
    in, so the sign-in page is never shown.
 
@@ -43,9 +44,38 @@ export function firefoxRoots({ env = process.env, home = os.homedir(), platform 
   if (platform === "darwin") return [path.join(home, "Library", "Application Support", "Firefox", "Profiles")];
   return [
     path.join(home, ".mozilla", "firefox"),
+    /* new installs since Firefox moved to the XDG folders */
+    path.join(env.XDG_CONFIG_HOME || path.join(home, ".config"), "mozilla", "firefox"),
     path.join(home, "snap", "firefox", "common", ".mozilla", "firefox"),
     path.join(home, ".var", "app", "org.mozilla.firefox", ".mozilla", "firefox"),
   ];
+}
+
+/* One Google sign-in out of a profile's cookie rows. Firefox keeps a cookie
+   jar per container and, with Total Cookie Protection, per site that embeds
+   Google (originAttributes "^partitionKey=…"); those embedded copies are
+   usually signed out or older. Mixing jars, or keeping a row that has expired
+   but not been purged yet, pairs one sign-in's __Secure-1PSID with another's
+   __Secure-1PSIDTS, which Google answers as signed out. So: no partitioned
+   jars, no expired rows, and one jar only, the default one when it is signed
+   in, else the most recently used. Resolves { cookies, used } or null. */
+export function firefoxJar(rows, now = Date.now()) {
+  const jars = new Map();
+  for (const r of rows) {
+    const attrs = String(r.originAttributes || "");
+    if (attrs.includes("partitionKey")) continue;
+    /* seconds in older Firefox, milliseconds in newer */
+    const exp = Number(r.expiry) || 0;
+    if (exp > 0 && (exp > 1e11 ? exp : exp * 1000) <= now) continue;
+    if (!r.value || !/^[A-Za-z0-9_.-]+$/.test(r.name)) continue;
+    const jar = jars.get(attrs) || { cookies: {}, used: 0 };
+    jar.cookies[r.name] = r.value;
+    jar.used = Math.max(jar.used, Number(r.lastAccessed) || 0);
+    jars.set(attrs, jar);
+  }
+  const signedIn = [...jars].filter(([, j]) => j.cookies["__Secure-1PSID"]);
+  if (!signedIn.length) return null;
+  return (signedIn.find(([attrs]) => attrs === "") || signedIn.sort((a, b) => b[1].used - a[1].used)[0])[1];
 }
 
 /* Google's cookies from the Firefox profile that has a Google sign-in (the most
@@ -66,14 +96,10 @@ export async function firefoxCookies({ roots = firefoxRoots() } = {}) {
         for (const ext of ["", "-wal", "-shm"]) if (fs.existsSync(db + ext)) fs.copyFileSync(db + ext, path.join(tmp, `cookies.sqlite${ext}`));
         const conn = new sqlite.DatabaseSync(path.join(tmp, "cookies.sqlite"));
         try {
-          const rows = conn.prepare("SELECT name, value, host, lastAccessed FROM moz_cookies WHERE host = 'google.com' OR host LIKE '%.google.com' ORDER BY lastAccessed").all();
-          const cookies = {};
-          let used = 0;
-          for (const r of rows) {
-            if (r.value && /^[A-Za-z0-9_.-]+$/.test(r.name)) cookies[r.name] = r.value;
-            used = Math.max(used, Number(r.lastAccessed) || 0);
-          }
-          if (cookies["__Secure-1PSID"] && (!best || used > best.used)) best = { cookies, authuser: 0, from: "Firefox", used };
+          /* .google.com last, so it wins a name another Google host also uses */
+          const rows = conn.prepare("SELECT * FROM moz_cookies WHERE host = 'google.com' OR host LIKE '%.google.com' ORDER BY host = '.google.com', lastAccessed").all();
+          const jar = firefoxJar(rows);
+          if (jar && (!best || jar.used > best.used)) best = { cookies: jar.cookies, authuser: 0, from: "Firefox", used: jar.used };
         } finally {
           conn.close();
         }
@@ -173,7 +199,7 @@ const readPortFile = (profileDir) => {
 
 /* The browser on its own saved profile with a DevTools port: an instance that
    is still open from before is reused. Resolves { cdp, child, name }. */
-async function openBrowser({ profileDir, exe, url, onStatus, signal }) {
+async function openBrowser({ profileDir, exe, url, onStatus, signal, headless = false }) {
   fs.mkdirSync(profileDir, { recursive: true, mode: 0o700 });
   const running = readPortFile(profileDir);
   if (running) {
@@ -182,9 +208,10 @@ async function openBrowser({ profileDir, exe, url, onStatus, signal }) {
   }
   const found = exe || findChromium();
   if (!found) throw new BrowserSignInError("No Chrome, Edge, Brave or Chromium found. Install one, set NOVA_BRIDGE_BROWSER to its path, or paste your cookies instead.");
-  onStatus?.(`Opening ${found.name}${url === "about:blank" ? "" : ": sign in to Google there. If Google says the browser is not secure, close it and sign in to Google in Firefox instead, or paste your cookies"}.`);
+  if (!headless) onStatus?.(`Opening ${found.name}.`);
   const child = spawn(found.path, [
     ...(found.args || []),
+    ...(headless ? ["--headless=new"] : []),
     `--user-data-dir=${profileDir}`,
     "--remote-debugging-port=0",
     "--remote-allow-origins=*",
@@ -230,34 +257,63 @@ export function cookieParams(cookies) {
 const googleCookies = async (cdp) => {
   const { cookies = [] } = await cdp.send("Storage.getCookies");
   const map = {};
-  for (const c of cookies) if (isGoogle(c.domain) && c.value) map[c.name] = c.value;
+  /* first-party only (a partitioned copy is another, older sign-in), and
+     .google.com's own value when another Google host has the same name */
+  const own = cookies.filter((c) => isGoogle(c.domain) && c.value && !c.partitionKey);
+  for (const c of [...own.filter((c) => c.domain !== ".google.com"), ...own.filter((c) => c.domain === ".google.com")]) map[c.name] = c.value;
   return map;
 };
 
-/* Open the browser on gemini.google.com and wait until a Google sign-in
-   appears in it. Resolves { cookies, authuser, from }. */
-export async function chromiumCookies({ profileDir, exe, onStatus, signal, timeoutMs = 10 * 60 * 1000 } = {}) {
-  const b = await openBrowser({ profileDir, exe, url: "https://gemini.google.com/app", onStatus, signal });
+/* The Google sign-in saved in the browser profile, read over DevTools from
+   the browser started unseen; null when it has none. */
+async function savedChromiumCookies({ profileDir, exe, signal }) {
+  const b = await openBrowser({ profileDir, exe, url: "about:blank", signal, headless: true });
   try {
-    const end = Date.now() + timeoutMs;
-    let closed = false;
-    b.cdp.closed.then(() => { closed = true; });
-    while (Date.now() < end) {
-      if (signal?.aborted) throw new BrowserSignInError("Cancelled.");
-      if (closed) throw new BrowserSignInError("The browser was closed before you signed in. If Google said it is not secure, sign in to Google in Firefox instead (then press Sign in again), or paste your cookies.");
-      let cookies = {};
-      try { cookies = await googleCookies(b.cdp); } catch { if (closed) continue; }
-      if (cookies["__Secure-1PSID"]) {
-        /* the rotating cookie lands a moment after the sign-in itself */
-        for (let i = 0; i < 12 && !cookies["__Secure-1PSIDTS"]; i++) { await sleep(500); cookies = { ...cookies, ...(await googleCookies(b.cdp).catch(() => ({}))) }; }
-        return { cookies, authuser: 0, from: b.name };
-      }
-      await sleep(1500);
-    }
-    throw new BrowserSignInError("Timed out waiting for the Google sign-in (10 minutes).");
+    const cookies = await googleCookies(b.cdp).catch(() => ({}));
+    return cookies["__Secure-1PSID"] ? { cookies, authuser: 0, from: b.name } : null;
   } finally {
     await closeBrowser(b);
   }
+}
+
+/* The Google sign-in from the browser's saved profile; when it has none, a
+   plain window of that browser on gemini.google.com for the user to sign in
+   (no DevTools port: Google refuses those), read once it is closed.
+   Resolves { cookies, authuser, from }. */
+export async function chromiumCookies({ profileDir, exe, onStatus, signal, timeoutMs = 10 * 60 * 1000 } = {}) {
+  const found = exe || findChromium();
+  if (!found) throw new BrowserSignInError("No Chrome, Edge, Brave or Chromium found. Install one, set NOVA_BRIDGE_BROWSER to its path, or paste your cookies instead.");
+  fs.mkdirSync(profileDir, { recursive: true, mode: 0o700 });
+  const saved = await savedChromiumCookies({ profileDir, exe: found, signal }).catch(() => null);
+  if (saved) return saved;
+
+  onStatus?.(`Sign in to Google in the ${found.name} window, then close it.`);
+  const child = spawn(found.path, [
+    ...(found.args || []),
+    `--user-data-dir=${profileDir}`,
+    "--no-first-run",
+    "--no-default-browser-check",
+    "https://gemini.google.com/app",
+  ], { stdio: "ignore" });
+  const exited = new Promise((resolve) => { child.on("exit", resolve); child.on("error", resolve); });
+  let timer;
+  const stop = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new BrowserSignInError("Timed out waiting for the Google sign-in (10 minutes).")), timeoutMs);
+    signal?.addEventListener("abort", () => reject(new BrowserSignInError("Cancelled.")), { once: true });
+  });
+  try {
+    await Promise.race([exited, stop]);
+  } catch (e) {
+    try { child.kill(); } catch {}
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+
+  onStatus?.("Reading the sign-in…");
+  const r = await savedChromiumCookies({ profileDir, exe: found, signal });
+  if (r) return r;
+  throw new BrowserSignInError(`The ${found.name} window was closed before you signed in to Google there. If a window from an earlier try is still open, close it, then select Sign in again. Or paste your cookies.`);
 }
 
 /* ---------- the two together ---------- */

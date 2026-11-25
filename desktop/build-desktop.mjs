@@ -55,6 +55,17 @@ for (const [name, text] of [["index.html", page], ["bridge.css", css]]) {
   await writeFile(path.join(STAGE, "bridge-app", name), text);
 }
 
+/* Nova's own title bar (Windows), using the Bridge window's font and icon */
+await mkdir(path.join(STAGE, "titlebar"), { recursive: true });
+for (const f of ["index.html", "titlebar.css", "titlebar.js", "preload.cjs"]) {
+  const text = (await readFile(path.join(ROOT, "desktop", "titlebar", f), "utf8"))
+    .replace("../../public/icon-192.png", "../bridge-app/vendor/icon-192.png")
+    .replace("../../src/assets/fonts/OverusedGroteskRoman-VF.woff2", "../bridge-app/vendor/font.woff2")
+    .replace("../../bridge/app/aero/", "../bridge-app/aero/");
+  if (text.includes("../../")) throw new Error(`desktop/titlebar/${f} links a file outside the package: ` + text.match(/["(]\.\.\/\.\.\/[^")]+/)?.[0]);
+  await writeFile(path.join(STAGE, "titlebar", f), text);
+}
+
 /* Google sign-in (Antigravity) for the packaged Bridge: read from the
    builder's .env (NOVA_GOOGLE_CLIENT_ID / NOVA_GOOGLE_CLIENT_SECRET, or the
    same names in the environment) and built into the bundle, so downloads

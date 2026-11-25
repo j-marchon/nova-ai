@@ -49,7 +49,7 @@ export function useEndpointLabel(settings) {
    ============================================================
 
    One picker for every provider: the provider's own live list, nothing
-   curated and no descriptions. Two tabs, Favorites and Models, with search,
+   curated and no descriptions. Two tabs, Models and Favorites, with search,
    a price sort and a free-only filter where the provider's list makes those
    possible. Favourites, sort and filter belong to the provider entry, so a
    star on OpenRouter shows only when picking for OpenRouter.
@@ -187,8 +187,8 @@ export function ModelList({ settings, onChange, onDone, onProviders, current, on
   const toggleFav = (id) => save({ favorites: favs.includes(id) ? favs.filter((x) => x !== id) : [...favs, id] });
 
   const TABS = [
-    { id: "favorites", label: "Favorites", icon: Star },
     { id: "models", label: "Models" },
+    { id: "favorites", label: "Favorites", icon: Star },
   ];
   const sortLabel = SORTS.find((x) => x.id === sort)?.label || "Default";
 

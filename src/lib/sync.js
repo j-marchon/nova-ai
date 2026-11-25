@@ -40,7 +40,7 @@ export class SyncBehind extends Error {
 
 async function call(settings, path, init = {}) {
   const ep = syncEndpoint(settings);
-  if (!ep) throw new Error("Add Nova Bridge in Settings → Providers to sync this device.");
+  if (!ep) throw new Error("Set up Nova Bridge in Settings → Nova Bridge to sync this device.");
   const headers = { ...(init.headers || {}), ...(ep.key ? { Authorization: `Bearer ${ep.key}` } : {}) };
   let res;
   try {
@@ -52,7 +52,7 @@ async function call(settings, path, init = {}) {
   if (res.ok) return res;
   const data = await res.json().catch(() => null);
   if (res.status === 409) throw new SyncBehind(Number(data?.rev) || 0);
-  if (res.status === 401 || res.status === 403) throw new Error(unwrapError(data)?.error?.message || "The Bridge did not accept this device. Request access again in Settings → Providers → Nova Bridge.");
+  if (res.status === 401 || res.status === 403) throw new Error(unwrapError(data)?.error?.message || "The Bridge did not accept this device. Request access again in Settings → Nova Bridge.");
   if (res.status === 404 && path === "/sync") throw new Error("This Bridge cannot sync. Update Nova Bridge.");
   throw new Error(unwrapError(data)?.error?.message || `The Bridge answered with error ${res.status}.`);
 }

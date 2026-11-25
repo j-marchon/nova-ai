@@ -43,7 +43,7 @@ describe("tab order", () => {
   it("Settings tabs end with You, Usage before it", async () => {
     await mount(<SettingsPage data={emptyData} update={() => {}} />);
     const labels = [...host.querySelectorAll("[aria-label='Settings tabs'] button")].map((b) => b.textContent.trim());
-    expect(labels).toEqual(["Providers", "Model", "Replies", "Memory", "Look", "Usage", "You"]);
+    expect(labels).toEqual(["Nova Bridge", "Model", "Replies", "Memory", "Look", "Usage", "You"]);
   });
 
   it("Create tabs run characters, universes, personas, lorebooks, with no Social tab", async () => {

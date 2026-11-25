@@ -56,11 +56,11 @@ function render(i) {
 
   paint("subs", i.subscriptions.map((p) => {
     const pending = !p.connected && p.flow?.status === "pending";
-    const note = p.problem || (p.connected ? "Connected" : p.flow?.message || "Not connected");
+    const note = p.problem || (p.connected ? p.note || "Connected" : p.flow?.message || p.unavailable || "Not connected");
     return `<div class="row" data-key="sub-${esc(p.id)}"><span class="dot ${p.connected ? (p.problem ? "bad" : "on") : ""}"></span>
       <div class="grow">${esc(p.name)}<small>${esc(note)}</small></div>
       ${pending && p.flow?.url ? `<button class="btn sm" data-open="${esc(p.flow.url)}">Open</button>` : ""}
-      ${p.connected ? `<button class="btn sm" data-out="${esc(p.id)}">Disconnect</button>` : `<button class="btn sm primary" data-in="${esc(p.id)}" ${pending ? "disabled" : ""}>${pending ? "Signing in…" : "Sign in"}</button>`}</div>`;
+      ${p.connected ? `<button class="btn sm" data-out="${esc(p.id)}">Disconnect</button>` : p.unavailable ? "" : `<button class="btn sm primary" data-in="${esc(p.id)}" ${pending ? "disabled" : ""}>${pending ? "Signing in…" : "Sign in"}</button>`}</div>`;
   }).join(""));
 
   paint("sessions", i.sessions.length ? i.sessions.map((d) => `

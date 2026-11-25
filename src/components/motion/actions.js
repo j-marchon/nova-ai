@@ -68,6 +68,8 @@ export function installActionFeedback(root, own) {
   const targetOf = event => {
     const el = event.target.closest?.(selector);
     if (!el || !root.contains(el) || el.matches(':disabled,[aria-disabled="true"]') || el.closest('[data-motion-ghost],[data-lifted="1"]')) return null;
+    // An invisible control laid over a label (a <select> styled opacity-0) must stay invisible.
+    if (getComputedStyle(el).opacity === "0") return null;
     // Message text must remain fixed for selection and double-tap editing.
     if (el.closest('.nv-msg-edit,[contenteditable="true"]') && !el.matches('button,a[href]')) return null;
     return el;
@@ -76,6 +78,24 @@ export function installActionFeedback(root, own) {
      zooms inside its own frame and the card, its name and its border stay
      still (scaling the whole card pushed its text past the clipped edge). */
   const cardPicture = el => (el.closest(".nv-card") && !el.matches(".nv-card-corner,.nv-btn--sm") ? el.querySelector("img,video") : null);
+  /* Hover zoom is for real controls only (not rows or areas that merely
+     take a click), and it never grows past what holds it: at most 3px a
+     side, less when the control sits closer than that to its container's
+     edge, and none when it fills it (a full-width row). */
+  const HOVERABLE = 'button,a[href],summary,[role="button"],[role="switch"],[role="radio"],[data-chat-card]';
+  const hoverScale = el => {
+    if (!el.matches(HOVERABLE)) return 1;
+    const r = el.getBoundingClientRect();
+    if (!r.width || !r.height) return 1;
+    /* the box it sits in: past any wrapper exactly its own size */
+    let box = el.parentElement?.getBoundingClientRect();
+    for (let p = el.parentElement, i = 0; p && box && i < 4 && box.width - r.width < 1 && box.height - r.height < 1; i++) {
+      p = p.parentElement;
+      box = p?.getBoundingClientRect();
+    }
+    const room = box ? Math.min(3, r.left - box.left, box.right - r.right, r.top - box.top, box.bottom - r.bottom) : 3;
+    return room < 1 ? 1 : Math.min(1.04, 1 + (2 * room) / Math.max(r.width, r.height));
+  };
   const release = el => {
     if (!el?.isConnected) return;
     if (el.matches('input[type="range"]')) { tween(el, { "--nv-thumb-scale": 1, duration: .5, ease: MOTION.bounce }); return; }
@@ -126,7 +146,7 @@ export function installActionFeedback(root, own) {
   };
   const change = event => {
     const el = event.target;
-    if (!el.matches?.('select,input[type="range"],input[type="checkbox"],input[type="radio"]') || el.disabled || motionMode() === "off") return;
+    if (!el.matches?.('select,input[type="range"],input[type="checkbox"],input[type="radio"]') || el.disabled || motionMode() === "off" || getComputedStyle(el).opacity === "0") return;
     remember(el);
     // Changes keep geometry stable, including range dragging and keyboard arrows.
     const check = el.matches('input[type="checkbox"],input[type="radio"]') && motionMode() === "full";
@@ -138,8 +158,10 @@ export function installActionFeedback(root, own) {
     if (!el || el.matches('.nv-msg,input[type="range"]') || event.pointerType !== "mouse" || !window.matchMedia("(hover: hover) and (pointer: fine)").matches || el.contains(event.relatedTarget) || el === pressed || motionMode() !== "full") return;
     const pic = cardPicture(el);
     if (pic) { remember(pic); tween(pic, { scale: 1.04, duration: .45, ease: MOTION.spring }); return; }
+    const scale = hoverScale(el);
+    if (scale === 1) return;
     remember(el);
-    tween(el, { scale: el.matches(big) ? 1.012 : 1.04, duration: .3, ease: MOTION.spring });
+    tween(el, { scale, duration: .3, ease: MOTION.spring });
   };
   const out = event => {
     const el = targetOf(event);

@@ -22,7 +22,9 @@ import {
 const hostOf = (url) => { try { return new URL(url).host; } catch { return url; } };
 const maskKey = (k) => (!k ? "" : k.length <= 10 ? "••••" : `${k.slice(0, 6)}…${k.slice(-4)}`);
 
-export function ProvidersPanel({ settings, onChange }) {
+/* `bridgeCard`: Nova Bridge's own card above the list (Settings shows it on
+   its own tab instead) */
+export function ProvidersPanel({ settings, onChange, bridgeCard = true }) {
   const list = settings.providers || [];
   const active = activeProvider(settings);
   /* the provider being edited: { id, draft }, or null */
@@ -44,7 +46,7 @@ export function ProvidersPanel({ settings, onChange }) {
 
   return (
     <div className="space-y-3">
-      <NovaBridgeCard settings={settings} onChange={onChange} />
+      {bridgeCard && <NovaBridgeCard settings={settings} onChange={onChange} />}
       <div className="p-4 rounded-3xl nv-glass space-y-2">
         <p className="text-[11px] font-medium tracking-wide text-zinc-400 uppercase">Your providers</p>
         {list.length === 0 && <p className="text-xs text-zinc-500 py-2">No providers yet. Add one below to start chatting.</p>}
@@ -58,6 +60,16 @@ export function ProvidersPanel({ settings, onChange }) {
             ? hostOf(p.base)
             : p.key ? maskKey(p.key) : "No key yet";
           const open = editing?.id === p.id;
+          /* Nova Bridge sets itself up (its card); it cannot be edited or removed */
+          if (isBridge) return (
+            <div key={p.id} className="flex items-center gap-3 pl-3.5 pr-2 py-3 min-h-[60px] rounded-2xl border" style={{ borderColor: "var(--nv-line)" }}>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm text-zinc-100 truncate">{pre.name}</p>
+                <p className="text-[11px] truncate text-zinc-500">{sub}</p>
+              </div>
+              {on && <span className="shrink-0 pr-2 text-[10px] uppercase tracking-wide text-zinc-400">In use</span>}
+            </div>
+          );
           return (
             <div key={p.id} className="rounded-2xl border" style={{ borderColor: "var(--nv-line)" }}>
               {/* not a switch: the chat's provider is picked in the Model tab */}
@@ -235,7 +247,7 @@ function ProviderForm({ bridgeLan, draft, setDraft, onSave, onCancel, onRemove, 
           </div>
           {draft.base && isPrivateBase(draft.base) && (
             <p className="text-[11px] text-zinc-500 leading-relaxed">
-              On a phone, use the computer's network or Tailscale address in place of localhost.
+              On a phone, use the computer's network address, not localhost.
             </p>
           )}
           {urlOwner && onSwitch && (
@@ -283,7 +295,7 @@ function ProviderForm({ bridgeLan, draft, setDraft, onSave, onCancel, onRemove, 
           autoCorrect="off"
         />
       </Field>
-      {isBridge && <p className="text-[11px] text-zinc-500 leading-relaxed">Save the address, then request access in the Nova Bridge card above and approve the matching code in the Bridge window. An administrator key can also be entered here.</p>}
+      {isBridge && <p className="text-[11px] text-zinc-500 leading-relaxed">Save, then request access above and approve the code in the Bridge window.</p>}
       {!custom && !isBridge && pre.keyUrl && (
         <a href={pre.keyUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] underline underline-offset-2" style={{ color: "var(--acc)" }}>
           Get a key at {hostOf(pre.keyUrl)} <ExternalLink size={11} />
@@ -381,10 +393,13 @@ function usePageVisible() {
   return visible;
 }
 
-function NovaBridgeCard({ settings, onChange }) {
+/* `alwaysOpen`: on a tab of its own, the card is not folded */
+export function NovaBridgeCard({ settings, onChange, alwaysOpen = false }) {
   const list = settings.providers || [];
   const entry = list.find((p) => p.preset === "nova-bridge");
-  const open = !!settings.bridgeCardOpen;
+  const open = alwaysOpen || !!settings.bridgeCardOpen;
+  /* a heading on its own tab, a fold button in a list */
+  const Head = alwaysOpen ? "div" : "button";
   const key = entry?.pairedBase && entry.pairedBase !== entry.base ? "" : entry?.key || "";
   /* { status: "looking" | "found" | "missing", base?, health? } */
   const [found, setFound] = useState({ status: "looking" });
@@ -553,9 +568,8 @@ function NovaBridgeCard({ settings, onChange }) {
 
   return (
     <div className="rounded-3xl nv-glass border border-[var(--nv-line)] overflow-hidden">
-      <button
-        onClick={() => onChange({ bridgeCardOpen: !open })}
-        aria-expanded={open}
+      <Head
+        {...(alwaysOpen ? {} : { onClick: () => onChange({ bridgeCardOpen: !open }), "aria-expanded": open })}
         className="w-full flex items-center gap-2 px-4 py-3 text-left"
       >
         <Zap size={14} className="shrink-0" style={{ color: "var(--acc)" }} />
@@ -563,8 +577,8 @@ function NovaBridgeCard({ settings, onChange }) {
         <span className="flex-1" />
         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${status === "found" ? "bg-zinc-900" : status === "looking" ? "bg-zinc-400 nv-pulse" : "bg-zinc-600"}`} />
         <span className={`text-[11px] truncate min-w-0 ${status === "found" ? "text-zinc-100 font-medium" : "text-zinc-500"}`}>{summary}</span>
-        <ChevronRight size={14} className={`shrink-0 text-zinc-500  ${open ? "rotate-90" : ""}`} />
-      </button>
+        {!alwaysOpen && <ChevronRight size={14} className={`shrink-0 text-zinc-500  ${open ? "rotate-90" : ""}`} />}
+      </Head>
 
       {open && (
         <div className="px-4 pb-4 space-y-3 border-t border-[var(--nv-line)] pt-3">
@@ -723,15 +737,20 @@ function NovaBridgeCard({ settings, onChange }) {
                 <Button icon={RefreshCw} onClick={() => setRound((r) => r + 1)}>
                   Search again
                 </Button>
-                {!entry?.key && !manual && (
+                {!manual && (
                   <Button variant="ghost" size="sm" onClick={() => setManual(true)} className="text-zinc-500 hover:text-zinc-300">
                     Enter address
                   </Button>
                 )}
               </div>
-              {entry?.key && <p className="text-[11px] text-zinc-400">Checking only your saved Bridge address to keep its key private. Edit that provider’s address if your computer moved.</p>}
-              {!entry?.key && manual && (
-                <ManualAddress onFound={(hit) => { setManual(false); settle(hit); }} />
+              {entry?.key && <p className="text-[11px] text-zinc-400">Only the saved address is checked. Computer moved? Enter its new address.</p>}
+              {manual && (
+                <ManualAddress onFound={(hit) => {
+                  setManual(false);
+                  /* a moved, paired bridge: save the address; the old key no longer counts there (pairedBase) */
+                  if (entry?.key && entry.base !== hit.base) onChange(patchProvider(settings, entry.id, { base: hit.base }));
+                  else settle(hit);
+                }} />
               )}
             </>
           )}

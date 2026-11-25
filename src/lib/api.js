@@ -287,7 +287,7 @@ export async function sendTo(ep, settings, path, init = {}) {
     if (e instanceof ProviderAddressError || e.name === "AbortError" || ep.src !== "nova-bridge") throw e;
     const hit = await findBridgeOnce({ saved: ep.base, lan: settings?.bridgeLan, pageHost: pageHost(), signal: init.signal });
     if (!hit || init.signal?.aborted) throw e;
-    if (new Headers(init.headers || {}).has("Authorization") && hit.base !== ep.base) throw new Error("Nova Bridge did not accept this device. It may have been removed in the Bridge window, or the Bridge is at a new address. Request access again in Settings → Providers → Nova Bridge.");
+    if (new Headers(init.headers || {}).has("Authorization") && hit.base !== ep.base) throw new Error("Nova Bridge did not accept this device. It may have been removed in the Bridge window, or the Bridge is at a new address. Request access again in Settings → Nova Bridge.");
     globalThis.window?.dispatchEvent?.(new CustomEvent("nova-bridge-moved", { detail: hit }));
     ep.base = hit.base;
     return send(`${hit.base}${path}`, init);
@@ -309,7 +309,7 @@ export async function fetchBridgeUsage(settings, { signal } = {}) {
     throw new Error(unreachable(ep));
   }
   const data = await res.json().catch(() => null);
-  if (res.status === 401 || res.status === 403) throw new Error("The Bridge did not accept this device. Request access again in Settings → Providers → Nova Bridge.");
+  if (res.status === 401 || res.status === 403) throw new Error("The Bridge did not accept this device. Request access again in Settings → Nova Bridge.");
   if (res.status === 404) throw new Error("This Bridge does not report usage. Update Nova Bridge.");
   if (!res.ok) throw new Error(unwrapError(data)?.error?.message || `The Bridge answered with error ${res.status}.`);
   return { providers: data?.providers && typeof data.providers === "object" ? data.providers : {} };
@@ -492,7 +492,7 @@ export function providerError(res, payload, { name, model }) {
   let msg = upstream ? `${name}: ${upstream}` : `${name} answered with error ${status}.`;
 
   if (status === 401) {
-    msg = `${name} rejected the key. Check it in Settings → Providers.`;
+    msg = `${name} rejected the key. Check it in Settings → Model.`;
   } else if (status === 402) {
     msg = `${name} says the account is out of credit, or this model is not on your plan.`;
   } else if (status === 403) {
@@ -1344,6 +1344,16 @@ async function fetchAnthropicModels(base, key, custom) {
   return out;
 }
 
+/* Whether any provider has ever answered with its model list: the setup
+   marker (Settings, its Model tab) stays until one has. */
+export const SEEN_KEY = "nova-models-seen";
+export const modelsSeen = () => { try { return localStorage.getItem(SEEN_KEY) === "1"; } catch { return false; } };
+function markModelsSeen() {
+  if (modelsSeen()) return;
+  try { localStorage.setItem(SEEN_KEY, "1"); } catch { /* private mode */ }
+  window.dispatchEvent(new Event(SEEN_KEY));
+}
+
 /* Per provider, keyed on everything that changes the answer, so a new key or
    address asks again. */
 const MODEL_LISTS = new Map();
@@ -1378,6 +1388,7 @@ export function fetchProviderModels(provider, { fresh = false } = {}) {
     return [...typed.map((id) => ({ id, name: id, ctx: null, pricing: null, free: false })), ...list];
   };
   const promise = load();
+  promise.then((l) => { if (l.length) markModelsSeen(); }, () => {});
   MODEL_LISTS.set(cacheKey, { at: Date.now(), promise });
   promise.catch(() => MODEL_LISTS.delete(cacheKey));
   return promise;

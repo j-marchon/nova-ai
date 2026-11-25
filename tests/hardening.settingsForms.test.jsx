@@ -59,16 +59,16 @@ function harness(initial, renderPage) {
 }
 
 describe("tab orders", () => {
-  it("Settings tabs run providers, model, replies, memory, look, usage, profile", async () => {
+  it("Settings tabs run Nova Bridge, model, replies, memory, look, usage, profile", async () => {
     await mount(<SettingsPage data={emptyData} update={() => {}} />);
     const labels = [...host.querySelectorAll("[aria-label='Settings tabs'] button")].map(b => b.textContent.trim());
-    expect(labels).toEqual(["Providers", "Model", "Replies", "Memory", "Look", "Usage", "You"]);
+    expect(labels).toEqual(["Nova Bridge", "Model", "Replies", "Memory", "Look", "Usage", "You"]);
   });
 
-  it("opens on Providers without a key and on Model with one", async () => {
+  it("opens on Model, where providers are added, with or without a key", async () => {
     const pressed = () => host.querySelector("[aria-label='Settings tabs'] button[aria-pressed='true']").textContent.trim();
     await mount(<SettingsPage data={emptyData} update={() => {}} />);
-    expect(pressed()).toBe("Providers");
+    expect(pressed()).toBe("Model");
     act(() => root.unmount()); root = createRoot(host);
     await mount(<SettingsPage data={{ ...emptyData, settings: keyed() }} update={() => {}} />);
     expect(pressed()).toBe("Model");

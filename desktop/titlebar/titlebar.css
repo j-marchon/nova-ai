@@ -1,0 +1,47 @@
+/* Nova's own title bar on Windows (the window is frameless): the Bridge
+   window's bar (bridge/app/bridge.css), in the skin and scheme Nova wears,
+   on a clear background over Nova's page. */
+
+@font-face { font-family: "Overused Grotesk"; src: url("../../src/assets/fonts/OverusedGroteskRoman-VF.woff2") format("woff2"); font-weight: 300 900; }
+@font-face { font-family: "TASA Orbiter"; src: url("../../bridge/app/aero/tasa-orbiter-latin.woff2") format("woff2"); font-weight: 400 800; }
+
+:root {
+  color-scheme: dark;
+  --display: "Overused Grotesk", system-ui, sans-serif;
+  --ink: oklch(1 0 0);
+  --muted: oklch(1 0 0 / .62);
+  --control: oklch(1 0 0 / .06);
+  --danger: oklch(0.6 0.21 25);
+  --on-danger: oklch(1 0 0);
+}
+html[data-scheme="light"] {
+  color-scheme: light;
+  --ink: oklch(0 0 0);
+  --muted: oklch(0 0 0 / .62);
+  --control: oklch(0 0 0 / .06);
+}
+html[data-skin="aero"] {
+  color-scheme: light;
+  --display: "TASA Orbiter", system-ui, sans-serif;
+  --ink: oklch(0.27 0.075 252);
+  --muted: oklch(0.36 0.075 248 / .82);
+  --control: oklch(1 0 0 / .55);
+  --danger: oklch(0.56 0.2 25);
+}
+
+* { box-sizing: border-box; margin: 0; }
+html, body { height: 100%; overflow: hidden; background: transparent; color: var(--ink); -webkit-font-smoothing: antialiased; user-select: none; }
+
+/* dragged to move the window; a double click maximizes it */
+.bar { -webkit-app-region: drag; height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 6px 0 14px; }
+.mark { width: 18px; height: 18px; border-radius: 5px; filter: grayscale(1); }
+.title { font: 500 13px/1 var(--display); color: var(--muted); letter-spacing: .01em; }
+.grow { flex: 1; }
+.win { -webkit-app-region: no-drag; width: 32px; height: 28px; border: 0; border-radius: 10px; display: grid; place-items: center; background: transparent; color: var(--muted); cursor: pointer; }
+.win:hover { background: var(--control); color: var(--ink); }
+.win.close:hover { background: var(--danger); color: var(--on-danger); }
+.win .two, [data-max="1"] .win .one { display: none; }
+[data-max="1"] .win .two { display: inline; }
+
+html[data-skin="aero"] .mark { filter: none; }
+html[data-skin="aero"] .title { color: var(--ink); font-weight: 600; letter-spacing: .02em; }

@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.2.0] — 2026-11-25
+
+### Desktop
+- **Nova's own title bar on Windows** — a frameless window with Nova's font, icon and light/dark colours; the menu shortcuts still work.
+- **Portable .exe tidies up** — old copies unpacked into Temp by earlier launches are removed; the Bridge gets its own stable copy.
+- **Update check on every launch** — while Check for updates is on, Nova asks GitHub each time it opens (it used to wait a day).
+
+### Nova Bridge
+- **Antigravity sign-in** — a signed-in Antigravity (the agy CLI or app) is used straight away, and its token is renewed when Google refuses it.
+- **Gemini app sign-in** — Chrome, Edge and Brave sign in through a plain window Google accepts, then the cookies are read unseen; Firefox reads the new XDG profile folder and one cookie jar only, so mixed or expired sign-ins no longer read as signed out.
+- **Sign-in messages** — a sign-in's progress or error is shown in full and can be copied.
+- Nova Bridge is always listed first under Model and can't be removed.
+
+### Look & Settings
+- **Chat bubbles** — greys that stand off the page in both modes; skins paint their own.
+- **Settings copy trimmed** — most descriptions removed or cut to one short line.
+- Settings → Model replaces the old Providers wording everywhere; a setup marker shows until a provider is working.
+- Dropdown lists use the app's colours; hover zoom only on real controls; the character creator uses two columns on desktop.
+
 ## [1.1.0] — 2026-11-23
 
 ### Character Creator

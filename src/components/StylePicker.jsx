@@ -602,7 +602,7 @@ export function CustomStyles({ settings, onChange }) {
     <div className="pl-3 space-y-2">
       {!usable && (
         <p className="text-[11px] leading-snug px-1" style={{ color: "var(--nv-ink)" }}>
-          {selected?.name || "This prompt"} has no text yet, so replies are written as {STYLE_PRESETS.find((p) => p.id === DEFAULT_STYLE).name} until you add some.
+          {selected?.name || "This prompt"} is empty; replies use {STYLE_PRESETS.find((p) => p.id === DEFAULT_STYLE).name} for now.
         </p>
       )}
 
@@ -630,7 +630,7 @@ export function CustomStyles({ settings, onChange }) {
               <span className="min-w-0 truncate">{c.name}</span>
               <PromptSize tokens={sizeOf(c)} />
             </>}
-            sub={empty ? "Text not added yet — tap to paste it or load a file" : c.text.trim().slice(0, 160)}
+            sub={empty ? "Empty · tap to add text" : c.text.trim().slice(0, 160)}
             editLabel={c.name}
             onEdit={() => open({ id: c.id, name: c.name, text: c.text || "", sampler: c.sampler, temperature: c.temperature, maxTokens: c.maxTokens, post: c.post, inject: c.inject, regex: c.regex, display: c.display, saved: c.saved, layout: c.layout, modes: c.modes, formats: c.formats })}
             onRemove={() => remove(c.id)}

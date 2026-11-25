@@ -15,9 +15,8 @@ import { Toasts } from "./components/Toasts.jsx";
 import { ActivityIsland } from "./components/ActivityIsland.jsx";
 import { requestActivityOpen } from "./lib/activity.js";
 import { showToast } from "./lib/toast.js";
-import { dailyUpdateCheck } from "./lib/updates.js";
-import { ChatSkeleton, NovaMark, PageSkeleton, ScreenSkeleton, topModal } from "./components/ui.jsx";
-import { hasKey } from "./lib/api.js";
+import { RELEASES_PAGE, bootUpdateCheck, shortVersion } from "./lib/updates.js";
+import { Button, ChatSkeleton, Modal, NovaMark, useNeedsSetup, PageSkeleton, ScreenSkeleton, topModal } from "./components/ui.jsx";
 import { findBridgeOnce, pageHost } from "./lib/bridgeFind.js";
 import { activeProvider, patchProvider } from "./lib/providers.js";
 import { saveFile, fillNames } from "./lib/cards.js";
@@ -33,7 +32,7 @@ import { useSkin } from "./components/useSkin.js";
 import { loadedSkin, sceneSetOf, skinOf, skinScheme, storedSkin } from "./skins/skins.js";
 import { LayeredScene } from "./skins/LayeredScene.jsx";
 import { exportPacks } from "./skins/store.js";
-import { applySkinIcon } from "./skins/icons.js";
+import { appIconOf, applyAppIcon } from "./skins/icons.js";
 import { version } from "../package.json";
 import { uid } from "./lib/util.js";
 import { isVideo } from "./lib/video.js";
@@ -173,6 +172,8 @@ function Nova({ data, setData }) {
   const dataRef = useRef(null);
   useEffect(() => { dataRef.current = data; rememberData(data); }, [data]);
   const loaded = !!data;
+  /* a newer release found at launch: { latest, url } */
+  const [updateNotice, setUpdateNotice] = useState(null);
   useEffect(() => {
     if (!loaded) return;
     const t = setTimeout(() => {
@@ -185,9 +186,9 @@ function Nova({ data, setData }) {
           showToast("Today's automatic backup could not be saved. Back up from Settings to be safe.", { tone: "warn" });
         });
       }
-      /* Check for updates (Settings → You): off unless turned on; then once a day */
-      if (d) dailyUpdateCheck(d.settings.updateCheck === true, version).then((u) => {
-        if (u?.newer) showToast(`Nova ${u.latest} is out. Settings → You has the link.`);
+      /* Check for updates (Settings → You): on every launch while it is on */
+      if (d) bootUpdateCheck(d.settings.updateCheck === true, version).then((u) => {
+        if (u?.newer) setUpdateNotice(u);
       });
     }, 5000);
     return () => clearTimeout(t);
@@ -649,7 +650,7 @@ function Nova({ data, setData }) {
   });
   const tabClass = `nv-tab ${swipeDir === "left" ? "nv-slide-left" : swipeDir === "right" ? "nv-slide-right" : "nv-page"}`;
 
-  const needsKey = !hasKey(data.settings);
+  const needsKey = useNeedsSetup(data.settings);
   const motionRoot = useRef(null);
   useMotionRoot(motionRoot, data.appearance?.motion || "full");
   const ap = data.appearance;
@@ -670,8 +671,11 @@ function Nova({ data, setData }) {
   /* the desktop app's Nova Bridge window wears the same skin */
   const skinId = skinOf(ap);
   useEffect(() => { window.novaDesktop?.setSkin?.(skinId); }, [skinId]);
-  /* and the app's icon on the phone (skins/icons.js) */
-  useEffect(() => { if (loaded) applySkinIcon(skinId); }, [skinId, loaded]);
+  /* and the desktop window's title bar, light or dark with the app */
+  useEffect(() => { window.novaDesktop?.setScheme?.(light ? "light" : "dark"); }, [light]);
+  /* the app's icon: the skin's own, or the one picked in Look (skins/icons.js) */
+  const iconId = appIconOf(ap);
+  useEffect(() => { if (loaded) applyAppIcon(iconId); }, [iconId, loaded]);
   const SkinBackground = skin?.Background;
   /* for the next startup screen, which shows before the saved data loads */
   useEffect(() => { try { localStorage.setItem("nova-scheme", light ? "light" : "dark"); } catch { /* private mode */ } }, [light]);
@@ -698,6 +702,17 @@ function Nova({ data, setData }) {
       <WebUpdate prepare={async () => {
         do { await save(unsaved.current || data); } while (unsaved.current);
       }} />
+      {updateNotice && (
+        <Modal title="Update available" onClose={() => setUpdateNotice(null)}>
+          <div className="space-y-4">
+            <p className="text-sm text-zinc-200">Nova {updateNotice.latest} is out · this is Nova {shortVersion(version)}</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setUpdateNotice(null)}>Later</Button>
+              <Button variant="primary" onClick={() => { window.open(updateNotice.url || RELEASES_PAGE, "_blank", "noopener,noreferrer"); setUpdateNotice(null); }}>Get it</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
       {saveError && <div role="alert" className="fixed top-0 inset-x-0 z-[9999] p-4 bg-zinc-900 text-white">
         Changes not saved. Keep this tab open until you retry or export a backup.
         <button className="px-3 underline" onClick={() => save(unsaved.current || data).catch(() => {})}>Retry</button>
@@ -736,7 +751,6 @@ function Nova({ data, setData }) {
         <Activity mode={shows("create") ? "visible" : "hidden"}>
           <div className={tabClass} ref={page === "create" ? pageEl : undefined}>
             <CreatePage
-              goSettings={() => goTab("settings")}
               data={createData}
               update={update}
               onEdit={pageActions.edit}
@@ -798,7 +812,7 @@ function Nova({ data, setData }) {
             <span className="nv-nav-trail" aria-hidden />
             {navItems.map(n => { const here = page === n.id || (page === "chat" && n.id === "history"); return <button key={n.id} onClick={() => goTab(n.id)} aria-current={here ? "page" : undefined}>
               <n.icon size={20} strokeWidth={here ? 1.9 : 1.5} /><span>{n.label}</span>
-              {n.id === "settings" && needsKey && <span className="nv-nav-badge" role="img" aria-label="Provider setup needed" />}
+              {n.id === "settings" && needsKey && <span className="nv-nav-badge nv-beacon" role="img" aria-label="Provider setup needed" />}
             </button>; })}
           </div>
           </div>

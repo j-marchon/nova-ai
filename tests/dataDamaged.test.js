@@ -24,7 +24,8 @@ describe("normalizeData with damaged entries", () => {
     expect(d.chats.map((c) => c.id)).toEqual(["x"]);
     expect(d.chats[0].messages.map((m) => m.id)).toEqual(["m1"]);
     expect(d.settings.providers.every((p) => p && typeof p === "object")).toBe(true);
-    expect(d.settings.providers.length).toBe(emptyData.settings.providers.length);
+    /* plus Nova Bridge, always added first */
+    expect(d.settings.providers.length).toBe(emptyData.settings.providers.length + 1);
     expect(d.settings.voice).toMatchObject({ rate: 1, pitch: 1 });
     expect(d.ledger).toEqual(emptyData.ledger);
     expect(d.appearance.scheme).toBe("dark");

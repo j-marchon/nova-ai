@@ -30,7 +30,7 @@ function TabPill({ t, on, pick }) {
   );
 }
 
-export function CreatePage({ data, update, onEdit, startChat, startGroupChat, openChat, goSettings }) {
+export function CreatePage({ data, update, onEdit, startChat, startGroupChat, openChat }) {
   const tabRow = useRef(null);
   const [tab, setTab] = useState("characters");
   useWheelScroll(tabRow);
@@ -216,28 +216,6 @@ export function CreatePage({ data, update, onEdit, startChat, startGroupChat, op
   return (
     <div className="nv-page-wrap max-w-[1360px] lg:max-w-none">
       <TopBar title="Create" />
-      {!data.characters.length && !data.universes.length && !data.chats.length && (
-        <section aria-label="Getting started" className="nv-rise nv-block nv-ticks mb-6 p-4 sm:p-5">
-          {/* the way to a first reply in a couple of minutes, with no bundled
-              prompts or sample characters: a free key, a free model, your own
-              character. Any other provider works the same way. */}
-          <p className="text-sm text-zinc-100 mb-3">Start chatting in a few minutes</p>
-          <ol className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm text-zinc-300">
-            {[
-              <>Get a free key from <a href="https://openrouter.ai/settings/keys" target="_blank" rel="noopener noreferrer" className="underline underline-offset-4 text-zinc-100">OpenRouter</a> (sign up, then Create key)</>,
-              "Paste it in Settings → Providers → OpenRouter, and pick a model marked free",
-              "Create a character here, or import a card",
-              "Keep a backup now and then from Settings → You",
-            ].map((t, n) => (
-              <li key={n} className="flex gap-3 items-baseline"><span aria-hidden className="nv-label shrink-0 tabular-nums">{String(n + 1).padStart(2, "0")}</span><span>{t}</span></li>
-            ))}
-          </ol>
-          <div className="flex items-center gap-4 mt-4">
-            {goSettings && <Button size="sm" onClick={goSettings}>Open Settings</Button>}
-            <a href="./privacy.html" target="_blank" rel="noopener noreferrer" className="text-xs underline underline-offset-4 text-zinc-500">Privacy</a>
-          </div>
-        </section>
-      )}
       <div ref={tabRow} className="nv-tabs" data-noswipe>
         <span className="nv-tabs-marker" data-selection-marker aria-hidden />
         {tabs.map((t) => <TabPill key={t.id} t={t} on={tab === t.id} pick={() => switchTab(t.id)} />)}

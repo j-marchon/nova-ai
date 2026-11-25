@@ -1,0 +1,50 @@
+# Builds Nova's Windows installer (Nova-<version>-setup.exe) on a Windows runner
+# and adds it to the release, with its checksum in SHA256SUMS.
+# The installer's uninstaller is made by running Windows code, so it can't be
+# built on Linux without Wine. Runs when a release is published, or by hand.
+name: Windows setup
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to add the installer to (e.g. v1.2.0)
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  setup:
+    runs-on: windows-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+      # Optional: Antigravity sign-in for the packaged Bridge (repository secrets).
+      NOVA_GOOGLE_CLIENT_ID: ${{ secrets.NOVA_GOOGLE_CLIENT_ID }}
+      NOVA_GOOGLE_CLIENT_SECRET: ${{ secrets.NOVA_GOOGLE_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: node desktop/build-desktop.mjs --win
+      - name: Add the installer and its checksum to the release
+        shell: bash
+        run: |
+          set -euo pipefail
+          setup=$(ls releases/desktop/Nova-*-setup.exe)
+          mkdir sums
+          gh release download "$TAG" -p SHA256SUMS -D sums --clobber || true
+          touch sums/SHA256SUMS
+          grep -v -- '-setup.exe' sums/SHA256SUMS > sums/new || true
+          (cd releases/desktop && sha256sum "$(basename "$setup")") | sed 's/ \*/  /' >> sums/new
+          mv sums/new sums/SHA256SUMS
+          gh release upload "$TAG" "$setup" sums/SHA256SUMS --clobber

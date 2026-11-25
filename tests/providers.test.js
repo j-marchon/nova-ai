@@ -23,8 +23,9 @@ afterEach(() => { clearActivity(); vi.unstubAllGlobals(); });
 describe("moving off the three fixed sources", () => {
   it("keeps an OpenRouter key, model and favourites", () => {
     const d = normalizeData({ settings: { apiKey: "sk-or-v1-abc", model: "x/y:free", favoriteModels: ["a/b"] } });
-    expect(d.settings.providers).toHaveLength(1);
-    expect(d.settings.providers[0]).toMatchObject({ id: "openrouter", key: "sk-or-v1-abc", model: "x/y:free", favorites: ["a/b"] });
+    expect(d.settings.providers).toHaveLength(2);
+    expect(d.settings.providers[0]).toMatchObject({ id: "nova-bridge", name: "Nova Bridge" });
+    expect(d.settings.providers[1]).toMatchObject({ id: "openrouter", key: "sk-or-v1-abc", model: "x/y:free", favorites: ["a/b"] });
     expect(d.settings.activeProvider).toBe("openrouter");
     expect(d.settings.apiKey).toBeUndefined();
     expect(d.settings.favoriteModels).toBeUndefined();
@@ -57,7 +58,16 @@ describe("moving off the three fixed sources", () => {
   it("leaves already-migrated settings alone", () => {
     const g = newProvider("groq", { key: "gsk_1", model: "llama" });
     const d = normalizeData({ settings: { providers: [g], activeProvider: "groq" } });
-    expect(d.settings.providers).toEqual([expect.objectContaining({ id: "groq", key: "gsk_1", model: "llama" })]);
+    expect(d.settings.providers).toEqual([expect.objectContaining({ preset: "nova-bridge" }), expect.objectContaining({ id: "groq", key: "gsk_1", model: "llama" })]);
+    expect(d.settings.activeProvider).toBe("groq");
+  });
+
+  it("always puts one Nova Bridge first, under its plain name", () => {
+    const b = { ...newProvider("nova-bridge"), name: "Nova Bridge (Subscriptions)", key: "k" };
+    const g = newProvider("groq");
+    const d = normalizeData({ settings: { providers: [g, b], activeProvider: "groq" } });
+    expect(d.settings.providers.map((p) => p.preset)).toEqual(["nova-bridge", "groq"]);
+    expect(d.settings.providers[0]).toMatchObject({ name: "Nova Bridge", key: "k" });
   });
 });
 

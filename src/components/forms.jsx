@@ -100,6 +100,10 @@ export function Group({ title, children, i = 0 }) {
   );
 }
 
+/* A creator on a desktop: two columns side by side from lg up (one column,
+   as on a phone, below that). */
+const COLUMNS = "space-y-4 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-6 lg:items-start";
+
 const SaveBtn = ({ onClick, disabled }) => (
   <AccBtn onClick={onClick} disabled={disabled} className="shrink-0">
     Save
@@ -187,9 +191,11 @@ export function PersonaForm({ initial, settings, onSave, onSettings, onClose, di
       title={initial ? "Edit persona" : "New persona"}
       onClose={onClose}
       screen
+      fill
       action={<SaveBtn disabled={!f.name.trim()} onClick={() => onSave(f)} />}
     >
-      <div className="space-y-4">
+      <div className={COLUMNS}>
+        <div className="space-y-4">
         <AvatarPicker value={f.avatar} onChange={(v) => set("avatar", v)} />
         <AiFill
           kind="personas"
@@ -207,6 +213,7 @@ export function PersonaForm({ initial, settings, onSave, onSettings, onClose, di
             return () => { if (before) setF(before); };
           }}
         />
+        </div>
         <Group title="Persona">
           <Field label="Name">
             <TextInput value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="What characters should call you" />
@@ -282,9 +289,12 @@ export function CharacterForm({ initial, settings, onSave, onSettings, onClose, 
       title={initial ? "Edit character" : "New character"}
       onClose={onClose}
       screen
+      fill
       action={<SaveBtn disabled={!f.name.trim()} onClick={() => onSave(card())} />}
     >
-      <div className="space-y-4">
+      <div className={COLUMNS}>
+        {/* who they are */}
+        <div className="space-y-4">
         <AiFill
           kind="characters"
           itemId={initial?.id || null}
@@ -339,7 +349,10 @@ export function CharacterForm({ initial, settings, onSave, onSettings, onClose, 
             <ProfileFields fields={PERSONALITY} value={f.personality} onChange={(v) => set("personality", v)} />
           </Group>
         </>}
+        </div>
 
+        {/* how they open, the card, and how their chats look */}
+        <div className="space-y-4">
         <Group i={1} title="Opening">
           {(advanced || f.scenario != null) && <Field label="Scenario">
             <TextArea rows={3} value={f.scenario || ""} onChange={(e) => set("scenario", e.target.value)} />
@@ -428,6 +441,7 @@ export function CharacterForm({ initial, settings, onSave, onSettings, onClose, 
         </div>
         {exportErr && <p className="text-[11px] text-zinc-100">{exportErr}</p>}
         {exportedTo && <p className="text-[11px] text-zinc-500">Saved to {exportedTo}</p>}
+        </div>
       </div>
     </Modal>
   );
@@ -576,7 +590,7 @@ export function UniverseForm({ initial, existingCharacters, settings, onSave, on
   const steps = ["World", "Characters", "Places", "Look"];
 
   return (
-    <Modal title={initial ? "Edit universe" : "Create universe"} onClose={onClose} wide screen action={<SaveBtn disabled={!f.name.trim()} onClick={() => onSave({ ...f, ...packGreetings(f.greetings, "opening"), characters: f.characters.filter((c) => c.name.trim()), locations: f.locations.filter((l) => l.name.trim()) })} />}>
+    <Modal title={initial ? "Edit universe" : "Create universe"} onClose={onClose} wide screen fill action={<SaveBtn disabled={!f.name.trim()} onClick={() => onSave({ ...f, ...packGreetings(f.greetings, "opening"), characters: f.characters.filter((c) => c.name.trim()), locations: f.locations.filter((l) => l.name.trim()) })} />}>
       {/* step indicator */}
       <div className="flex items-center gap-2 mb-5">
         {steps.map((s, i) => (
@@ -644,7 +658,8 @@ export function UniverseForm({ initial, existingCharacters, settings, onSave, on
       </div>
 
       {step === 0 && (
-        <div className="space-y-4">
+        <div className={COLUMNS}>
+          <div className="space-y-4">
           <AvatarPicker value={f.avatar} onChange={(v) => set("avatar", v)} label="Universe cover" />
           <div className="grid sm:grid-cols-2 gap-4">
             <Field label="Universe name">
@@ -657,6 +672,8 @@ export function UniverseForm({ initial, existingCharacters, settings, onSave, on
           <Field label="Story / setting">
             <TextArea rows={6} value={f.story} onChange={(e) => set("story", e.target.value)} placeholder="The state of the world, where the story picks up, what is happening..." />
           </Field>
+          </div>
+          <div className="space-y-4">
           <Field label="World rules">
             <TextArea rows={5} value={f.rules} onChange={(e) => set("rules", e.target.value)} placeholder="How the world works, what is and is not possible, the tone..." />
           </Field>
@@ -666,6 +683,7 @@ export function UniverseForm({ initial, existingCharacters, settings, onSave, on
             single="Opening scene"
             placeholder="*Rain sweeps across King's Row as the transport touches down...*"
           />
+          </div>
         </div>
       )}
 
@@ -687,6 +705,7 @@ export function UniverseForm({ initial, existingCharacters, settings, onSave, on
               </Button>
             </div>
           </div>
+          <div className="space-y-3 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-3 lg:items-start">
           {f.characters.map((c, i) => (
             <div key={c.id} className="p-3 rounded-xl nv-hair space-y-2">
               <div className="flex items-center gap-2">
@@ -704,6 +723,7 @@ export function UniverseForm({ initial, existingCharacters, settings, onSave, on
               <UniverseCharAvatar value={c.avatar} onChange={(v) => setChar(i, "avatar", v)} />
             </div>
           ))}
+          </div>
         </div>
       )}
 
@@ -716,6 +736,7 @@ export function UniverseForm({ initial, existingCharacters, settings, onSave, on
               Add place
             </Button>
           </div>
+          <div className="space-y-3 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-3 lg:items-start">
           {f.locations.map((l, i) => (
             <div key={l.id} className="p-3 rounded-xl nv-hair space-y-2">
               <div className="flex items-center gap-2">
@@ -731,6 +752,7 @@ export function UniverseForm({ initial, existingCharacters, settings, onSave, on
               <TextArea rows={4} value={l.description} onChange={(e) => setLoc(i, "description", e.target.value)} placeholder="What this place is like (optional)" />
             </div>
           ))}
+          </div>
         </div>
       )}
 

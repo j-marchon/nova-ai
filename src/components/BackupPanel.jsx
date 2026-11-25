@@ -137,18 +137,16 @@ export function BackupPanel({ data, update }) {
     <div className="p-4 rounded-3xl nv-glass space-y-3">
       <div>
         <p className="text-sm text-zinc-100">Backup</p>
-        <p className="text-[11px] text-zinc-500 leading-snug mt-0.5">
-          Characters, chats, personas, lorebooks, media and settings in one file. API keys and credentials are excluded unless you opt in.
-          {native ? " Saved in Documents/Nova on this phone." : desktop ? " Nova asks where to save it, starting in Documents/Nova. Keep a copy off this computer too." : " Your browser chooses where downloads are saved. Browser storage can be cleared or evicted; keep a backup outside this browser."}
-        </p>
+        {!desktop && <p className="text-[11px] text-zinc-500 leading-snug mt-0.5">
+          {native ? "Saved in Documents/Nova." : "Browser storage can be cleared; keep a copy outside it."}
+        </p>}
       </div>
       {!data.characters?.length && !data.universes?.length && !data.chats?.length && (
         <div className="text-[11px] text-zinc-400 space-y-1">
           <p className="text-zinc-200">Start here</p>
           <ol className="list-decimal pl-4 space-y-1">
-            <li>In Providers, add your endpoint and key, then choose a model.</li>
-            <li>Create or import a character and set your persona.</li>
-            <li>Export a backup after you make changes you want to keep.</li>
+            <li>Add a provider and pick a model in Model.</li>
+            <li>Create or import a character.</li>
           </ol>
         </div>
       )}
@@ -164,7 +162,7 @@ export function BackupPanel({ data, update }) {
             unavailable: "Browser storage protection could not be checked. Keep downloaded backups.",
           })[persistence]}</p>
           {(persistence === "temporary" || persistence === "denied" || persistence === "unavailable") && navigator.storage?.persist && <button onClick={protectStorage} className="underline text-zinc-200">Request persistent storage</button>}
-          <p>Data belongs to this browser profile and site address; private browsing may delete it when the session ends. Persistent storage is not a backup.</p>
+          <p>Persistent storage is not a backup.</p>
         </div>
       )}
       <a href="./privacy.html" target="_blank" rel="noopener noreferrer" className="inline-block text-[11px] underline text-zinc-400">Privacy and local data</a>
@@ -179,15 +177,13 @@ export function BackupPanel({ data, update }) {
         on={includeCredentials}
         onClick={() => { if (!busy) update({ settings: { ...data.settings, backupCredentials: !includeCredentials } }); }}
         title="Include API keys and credentials"
-        sub="Off by default. Sync's Send follows this too. When on, anyone with the unencrypted file can use these credentials. Keep it private."
+        sub="Anyone with the file can use them. Sync follows this."
       />
       <ToggleRow
         on={includeSkins}
         onClick={() => { if (!busy) update({ settings: { ...data.settings, backupSkins: !includeSkins } }); }}
         title="Include skins"
-        sub={skinCount
-          ? `The ${skinCount === 1 ? "skin" : `${skinCount} skins`} you added in Look go in the file, so a restore brings ${skinCount === 1 ? "it" : "them"} back. Adds a few hundred KB per skin. The daily backup follows this too.`
-          : "Skins you add in Look go in the file, so a restore brings them back. The daily backup follows this too."}
+        sub={skinCount ? "A few hundred KB each" : null}
       />
       <div className="flex gap-2">
         <Button size="lg" icon={Download} onClick={backUp} disabled={!!busy} className="flex-1">
@@ -207,7 +203,7 @@ export function BackupPanel({ data, update }) {
 
       <div className="text-[11px] text-zinc-400 space-y-1">
         <Button onClick={diagnostics} disabled={!!busy}>{busy === "diagnostics" ? "Exporting..." : "Export diagnostics"}</Button>
-        <p>App version, browser platform and storage support only. No provider addresses, credentials or chats.</p>
+        <p>No addresses, keys or chats.</p>
       </div>
 
       {pending && (
@@ -216,7 +212,7 @@ export function BackupPanel({ data, update }) {
             Replace everything in the app with this backup{pending.createdAt ? ` from ${new Date(pending.createdAt).toLocaleString()}` : ""}?
           </p>
           <p className="text-[11px] text-zinc-100">{backupSummary(pending.state, pending.skins)}</p>
-          <p className="text-[11px] text-zinc-400">Current activity will be canceled. This replaces your local data and provider settings, including credentials. Back up anything you want to keep first.</p>
+          <p className="text-[11px] text-zinc-400">Replaces everything on this device, keys included.</p>
           <div className="flex gap-2">
             <AccBtn onClick={restore} disabled={!!busy} className="flex-1">{busy === "restore" ? "Restoring..." : "Restore"}</AccBtn>
             <Button onClick={() => setPending(null)} disabled={!!busy} className="flex-1">Cancel</Button>

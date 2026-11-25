@@ -77,7 +77,7 @@ describe("syncing settings", () => {
     const without = readBackup([...backupParts(state, "1.0.0")].join("")).state;
     const withKeys = readBackup([...backupParts(state, "1.0.0", { includeCredentials: true })].join("")).state;
     expect(without.settings.customStyles[0].name).toBe("Style");
-    expect(without.settings.providers[0].key).toBe("");
-    expect(withKeys.settings.providers[0].key).toBe("sk-1");
+    expect(without.settings.providers.find((p) => p.id === "or").key).toBe("");
+    expect(withKeys.settings.providers.find((p) => p.id === "or").key).toBe("sk-1");
   });
 });

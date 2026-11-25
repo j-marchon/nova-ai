@@ -6,6 +6,7 @@ import { useSelectionMarker, useWheelScroll } from "./motion/navigation.js";
 import { createPortal } from "react-dom";
 import { Check, ChevronLeft, ChevronRight, Pencil, Trash2, X } from "lucide-react";
 import { Media } from "./media.jsx";
+import { SEEN_KEY, modelsSeen } from "../lib/api.js";
 
 /* ============================================================
    basic components
@@ -195,7 +196,9 @@ export function useBackLayer(onBack, el) {
    bigger editors. action: an optional button on the right of that bar. */
 /* `fixed`: one size whatever is in it, for a sheet with tabs, so switching
    tabs never resizes or moves it (the content scrolls inside). */
-export function Modal({ title, onClose, children, wide = false, screen = false, fixed = false, action }) {
+/* `fill`: a full-screen form that uses a desktop's width (its content lays
+   itself out in columns from lg up); otherwise it keeps a reading measure. */
+export function Modal({ title, onClose, children, wide = false, screen = false, fill = false, fixed = false, action }) {
   const self = useRef({});
   const previousFocus = useRef(null);
   const parent = useContext(ModalParent);
@@ -472,7 +475,7 @@ export function Modal({ title, onClose, children, wide = false, screen = false, 
 
       <div className="shrink-0 z-10" style={{ paddingTop: "var(--sa-t)" }}>
         <div className="nv-hair-b">
-          <div className="max-w-3xl mx-auto flex items-center gap-2 px-3 sm:px-5 h-14">
+          <div className={`${fill ? "max-w-3xl lg:max-w-[1360px] lg:px-8" : "max-w-3xl"} mx-auto flex items-center gap-2 px-3 sm:px-5 h-14`}>
             <Button variant="icon" onClick={shut} className="text-zinc-300 -ml-1" aria-label="Close">
               <ChevronLeft size={22} />
             </Button>
@@ -482,7 +485,7 @@ export function Modal({ title, onClose, children, wide = false, screen = false, 
         </div>
       </div>
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 pt-5" style={{ paddingBottom: "calc(2rem + var(--sa-b))" }}>{children}</div>
+        <div className={`${fill ? "max-w-3xl lg:max-w-[1360px] lg:px-8" : "max-w-3xl"} mx-auto px-4 sm:px-6 pt-5`} style={{ paddingBottom: "calc(2rem + var(--sa-b))" }}>{children}</div>
       </div>
     </div>
   ) : (
@@ -1013,4 +1016,22 @@ export function ScreenSkeleton() {
       </div>
     </div>
   );
+}
+
+/* The setup marker (Settings, its Model tab): until a provider other than
+   Nova Bridge has a key or address, or any provider (the Bridge too) has
+   answered with its model list. Re-renders when that first list arrives. */
+export function useNeedsSetup(settings) {
+  const seen = useModelsSeen();
+  return !seen && !(settings?.providers || []).some((p) => p.preset !== "nova-bridge" && (p.preset === "custom" ? !!p.base : !!p.key));
+}
+function useModelsSeen() {
+  const [seen, setSeen] = useState(modelsSeen);
+  useEffect(() => {
+    if (seen) return;
+    const on = () => setSeen(true);
+    window.addEventListener(SEEN_KEY, on);
+    return () => window.removeEventListener(SEEN_KEY, on);
+  }, [seen]);
+  return seen;
 }

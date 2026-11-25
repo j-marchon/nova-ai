@@ -5,7 +5,7 @@ import { shortVersion } from "../lib/updates.js";
 import { useEffect, useRef, useState } from "react";
 import {
   Brain, Check, Cpu, Activity, Lock, MessageCircle, MessagesSquare, Monitor, Moon,
-  Palette, Pause, Plug, RectangleHorizontal, Sparkles, Sun, User, Waves, Zap,
+  Palette, Pause, RectangleHorizontal, Sparkles, Sun, User, Waves, Zap,
 } from "lucide-react";
 import { AccountPanel, fmtNum } from "../components/AccountPanel.jsx";
 import { BackupPanel } from "../components/BackupPanel.jsx";
@@ -14,15 +14,16 @@ import { SyncPanel } from "../components/SyncPanel.jsx";
 import { BridgeUsage } from "../components/BridgeUsage.jsx";
 import { StyleChips } from "../components/StylePicker.jsx";
 import { ModelList, useEndpointLabel } from "../components/models.jsx";
-import { ProvidersPanel } from "../components/ProvidersPanel.jsx";
+import { NovaBridgeCard, ProvidersPanel } from "../components/ProvidersPanel.jsx";
 import { VoiceSection } from "../components/VoiceSection.jsx";
-import { Button, Field, ScrollTabs, Segmented, Slider, TextArea, TextInput, ToggleRow, TopBar, inputCls, selStyle } from "../components/ui.jsx";
+import { Button, Field, ScrollTabs, Segmented, Slider, TextArea, TextInput, ToggleRow, TopBar, inputCls, selStyle, useNeedsSetup } from "../components/ui.jsx";
 import { hasKey } from "../lib/api.js";
 import { DEFAULT_HISTORY_TOKENS, MAX_HISTORY_TOKENS } from "../lib/data.js";
 import { bannedList } from "../lib/prompt.js";
 import { SUPPORTED_LANGUAGES } from "../lib/translate.js";
 import { STANDARD, SUPPORT_URL, canWear, isBuiltInSkin, loadSkin, sceneSetOf, skinList, skinOf, skinScheme, skinTileArt } from "../skins/skins.js";
 import { SkinTile } from "../skins/SkinTile.jsx";
+import { iconChoices, iconFor, iconPick, iconSrc } from "../skins/icons.js";
 import { MAX_ZIP_BYTES, SkinError } from "../skins/pack.js";
 import { installPack, removePack } from "../skins/store.js";
 import { useInstalledSkins, useLoadedSkins } from "../components/useSkin.js";
@@ -142,7 +143,7 @@ function SkinPicker({ value, onChange }) {
       </div>
       {note?.locked ? (
         <p role="status" className="text-xs leading-snug text-zinc-400">
-          {note.locked.name} is a supporter skin, sold separately. Pick its .zip as you got it, without unzipping it, to unlock it on this device.
+          Supporter skin. Pick its .zip, still zipped, to unlock it.
           {SUPPORT_URL && <> <a href={SUPPORT_URL} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 text-zinc-200">Get {note.locked.name}</a></>}
         </p>
       ) : note && <p role="status" className={`text-xs leading-snug ${note.ok ? "text-zinc-500" : ""}`} style={note.ok ? undefined : { color: "var(--nv-danger)" }}>{note.text}</p>}
@@ -192,6 +193,32 @@ function ScenePicker({ skin, value, onChange }) {
   );
 }
 
+/* ---------- the app icon ----------
+   Auto wears the skin's own icon; any other is kept whatever the skin
+   (skins/icons.js). */
+function IconPicker({ ap, onChange }) {
+  const pick = iconPick(ap);
+  const names = Object.fromEntries(skinList().map((k) => [k.id, k.name]));
+  return (
+    <div className="space-y-2">
+      <p className="nv-label">App icon</p>
+      <div className="grid grid-cols-4 gap-2 sm:gap-3" role="radiogroup" aria-label="App icon">
+        {["auto", ...iconChoices()].map((id) => (
+          <button key={id} type="button" role="radio" aria-checked={pick === id} onClick={() => onChange({ icon: id })}
+            className="nv-hair min-h-11 rounded-[var(--nv-r-card)] p-2 flex flex-col items-center gap-1.5 hover:bg-[var(--nv-control)]">
+            <img src={iconSrc(id === "auto" ? iconFor(skinOf(ap)) : id)} alt="" className="w-10 h-10 rounded-[22%]" />
+            <span className="flex items-center gap-1 text-[11px] text-zinc-300">
+              {id === "auto" ? "Auto" : names[id] || id}
+              {pick === id && <Check size={12} className="shrink-0" aria-hidden />}
+            </span>
+          </button>
+        ))}
+      </div>
+      {window.Capacitor?.isNativePlatform?.() && <p className="text-[11px] text-zinc-500 leading-snug">Changes the next time Nova starts.</p>}
+    </div>
+  );
+}
+
 /* ---------- appearance ---------- */
 export function AppearancePanel({ ap, onChange }) {
   const pref = ap.scheme || "dark";
@@ -214,10 +241,9 @@ export function AppearancePanel({ ap, onChange }) {
           on={ap.skinInChat === true}
           onClick={() => onChange({ skinInChat: ap.skinInChat !== true })}
           title="Skin in chats"
-          sub="Off: the chat itself is plain black or white; the rest keeps the skin."
+          sub="Off: chats stay plain black or white"
         />
-        {/* Android switches the launcher icon at the next start (skins/icons.js) */}
-        {window.Capacitor?.isNativePlatform?.() && <p className="text-[11px] text-zinc-500 leading-snug">The app icon follows the skin from the next time Nova starts.</p>}
+        <IconPicker ap={ap} onChange={onChange} />
       </Block>
       </div>
 
@@ -238,7 +264,7 @@ export function AppearancePanel({ ap, onChange }) {
         />
         {fixedScheme && (
           <p id="mode-held-note" className="text-xs text-zinc-500 leading-snug">
-            {skinName} is a {fixedScheme} skin. Your Mode comes back when you pick another skin.
+            {skinName} is a {fixedScheme} skin.
           </p>
         )}
       </Block>
@@ -261,12 +287,6 @@ export function AppearancePanel({ ap, onChange }) {
             { id: "aligned", label: "Aligned", icon: MessagesSquare },
           ]}
         />
-        <p className="text-xs text-zinc-500 leading-snug">
-          {ap.bubbles === "aligned"
-            ? "Yours on the right, theirs on the left, like a messaging app."
-            : "Every bubble runs the width of the chat. Roomy on a phone."}{" "}
-          Phone messages follow this too.
-        </p>
       </Block>
 
       <Block label="Motion" i={2}>
@@ -290,8 +310,10 @@ export function AppearancePanel({ ap, onChange }) {
 
    One tab at a time, picked from the bar at the top, so each screen holds
    one subject instead of the whole list. */
+/* Nova Bridge: the Bridge itself, its sync and backups. Model: the
+   providers and their keys, then the model to use. */
 const TABS = [
-  { id: "providers", label: "Providers", icon: Plug },
+  { id: "bridge", label: "Nova Bridge", icon: Zap },
   { id: "model", label: "Model", icon: Cpu },
   { id: "replies", label: "Replies", icon: MessageCircle },
   { id: "memory", label: "Memory", icon: Brain },
@@ -302,9 +324,10 @@ const TABS = [
 
 export function SettingsPage({ data, update }) {
   const s = data.settings;
+  const needsSetup = useNeedsSetup(s);
   const ap = data.appearance;
-  /* a fresh install has nothing to pick a model from yet */
-  const [tab, setTab] = useState(() => (hasKey(s) ? "model" : "providers"));
+  /* Model first: a fresh install adds a provider there */
+  const [tab, setTab] = useState("model");
   const setS = (patch) => update(d => ({ ...d, settings: { ...d.settings, ...patch } }));
   const endpoint = useEndpointLabel(s);
   const bans = bannedList(s.bannedPhrases).length;
@@ -318,7 +341,7 @@ export function SettingsPage({ data, update }) {
           <button key={t.id} onClick={() => setTab(t.id)} aria-pressed={on} data-n={String(n + 1).padStart(2, "0")}>
             <t.icon size={16} strokeWidth={1.6} className="nv-settings-icon" />
             <span>{t.label}</span>
-            {t.id === "providers" && !hasKey(s) && <span className="nv-dot" aria-label="Setup needed" />}
+            {t.id === "model" && needsSetup && <span className="nv-dot nv-beacon" aria-label="Setup needed" />}
           </button>
         );
       })}
@@ -331,17 +354,28 @@ export function SettingsPage({ data, update }) {
       <div className="lg:grid lg:grid-cols-[190px_minmax(0,1fr)] lg:gap-14 lg:items-start">
       <div className="nv-settings-side">{tabs}</div>
       <div ref={stage} className="nv-settings-stage space-y-3 min-w-0 max-w-2xl lg:max-w-none mt-5 lg:mt-0">
-        {tab === "providers" && <ProvidersPanel settings={s} onChange={setS} />}
+        {tab === "bridge" && (
+          /* the Bridge beside what travels through it (sync) */
+          <div className="nv-settings-stage space-y-3 xl:space-y-0">
+            <div className="space-y-3 min-w-0">
+              <NovaBridgeCard settings={s} onChange={setS} alwaysOpen />
+            </div>
+            <div className="space-y-3 min-w-0">
+              <SyncPanel data={data} update={update} />
+            </div>
+          </div>
+        )}
 
         {tab === "model" && (
-          <div className="space-y-3 p-4 sm:p-5 nv-block">
-            {!hasKey(s) && (
-              <button onClick={() => setTab("providers")} className="nv-hair w-full text-left px-3.5 py-3 rounded-xl" style={{ borderColor: "var(--nv-edge-ink)" }}>
-                <p className="text-sm text-zinc-100">{(s.providers || []).length ? `Add your ${endpoint.provider} key first` : "Add a provider first"}</p>
-              </button>
+          <>
+            <ProvidersPanel settings={s} onChange={setS} bridgeCard={false} />
+            {(s.providers || []).length > 0 && (
+              <div className="space-y-3 p-4 sm:p-5 nv-block">
+                {!hasKey(s) && <p className="text-sm text-zinc-100">Add your {endpoint.provider} key first.</p>}
+                <ModelList settings={s} onChange={setS} />
+              </div>
             )}
-            <ModelList settings={s} onChange={setS} onProviders={() => setTab("providers")} />
-          </div>
+          </>
         )}
 
         {tab === "replies" && (
@@ -397,7 +431,7 @@ export function SettingsPage({ data, update }) {
             <ToggleRow on={s.memoryOn !== false} onClick={() => setS({ memoryOn: s.memoryOn === false })} title="Story summary" sub="Old messages become a short note" />
             <div className="nv-hair px-3.5 py-3 rounded-xl">
               <p className="text-sm text-zinc-100">Scene tracker</p>
-              <p className="text-[11px] text-zinc-500 leading-snug mt-0.5 mb-2.5">Who, where and when, rewritten every few replies</p>
+              <p className="text-[11px] text-zinc-500 leading-snug mt-0.5 mb-2.5">Who, where and when</p>
               <div className="grid grid-cols-4 gap-1.5">
                 {[{ v: 0, l: "Off" }, { v: 2, l: "Every 2" }, { v: 4, l: "Every 4" }, { v: 8, l: "Every 8" }].map(({ v, l }) => {
                   const on = (s.sceneEvery ?? 4) === v;
@@ -464,7 +498,7 @@ export function SettingsPage({ data, update }) {
               </p>
             )}
             {!endpoint.isGoogle && endpoint.src !== "nova-bridge" && (
-              <p className="text-[11px] text-zinc-500 leading-relaxed">{endpoint.provider} does not report spend to apps. Its own dashboard has the figures.</p>
+              <p className="text-[11px] text-zinc-500 leading-relaxed">{endpoint.provider} does not report spend to apps.</p>
             )}
             <p className="text-[11px] text-zinc-600">
               {fmtNum(data.ledger?.tokensIn)} tokens in · {fmtNum(data.ledger?.tokensOut)} out
@@ -484,10 +518,9 @@ export function SettingsPage({ data, update }) {
                   <TextInput value={data.username} onChange={(e) => update({ username: e.target.value })} placeholder="What characters call you" />
                 </Field>
               </div>
-              <SyncPanel data={data} update={update} />
+              <BackupPanel data={data} update={update} />
             </div>
             <div className="space-y-3 min-w-0">
-              <BackupPanel data={data} update={update} />
               <UpdatePanel data={data} update={update} />
             </div>
           </div>

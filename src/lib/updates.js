@@ -1,7 +1,7 @@
 /* ---------- Check for updates (Settings → You) ----------
 
    Off unless the user turns it on: Nova makes no request of its own until
-   then. When on, it asks GitHub's public API once a day which release of
+   then. When on, it asks GitHub's public API each time Nova opens which release of
    Nova is the newest, and says so when it is newer than this one. Only
    that one anonymous request is made; nothing about the user or library
    is sent. */
@@ -10,7 +10,6 @@
 export const RELEASES_REPO = "j-marchon/nova-releases";
 export const RELEASES_PAGE = `https://github.com/${RELEASES_REPO}/releases/latest`;
 const API = `https://api.github.com/repos/${RELEASES_REPO}/releases/latest`;
-const DAY = 24 * 60 * 60 * 1000;
 const KEY = "nova-update-check";
 
 /* "v1.2.3" or "1.2" -> [1, 2, 3]; null if it is not a version */
@@ -54,13 +53,13 @@ export async function checkForUpdate(current, { fetchImpl = fetch, now = Date.no
 /* The last answer, if any. */
 export const lastCheck = () => readSaved();
 
-/* The daily check, for when the app opens: asks only when it is on and the
-   last answer is a day old. Resolves to the answer (fresh or saved), or
-   null; never throws. */
-export async function dailyUpdateCheck(enabled, current, opts = {}) {
+/* The check for when the app opens: asks every launch while it is on.
+   Resolves to the fresh answer, the saved one when GitHub cannot be reached,
+   or null; never throws. */
+export async function bootUpdateCheck(enabled, current, opts = {}) {
   if (!enabled) return null;
-  const now = opts.now ?? Date.now();
-  const saved = readSaved();
-  if (saved && now - saved.at < DAY && now >= saved.at) return { ...saved, newer: isNewer(saved.latest, current) };
-  try { return await checkForUpdate(current, { ...opts, now }); } catch { return null; }
+  try { return await checkForUpdate(current, opts); } catch {
+    const saved = readSaved();
+    return saved ? { ...saved, newer: isNewer(saved.latest, current) } : null;
+  }
 }

@@ -2,21 +2,36 @@
    serves just enough of the DevTools protocol over a hand-made WebSocket, and
    exits when asked (or by itself, as a user closing the window would).
 
-   Env: FAKE_COOKIES  JSON [{ name, value, domain }] shown by Storage.getCookies
-        FAKE_DELAY    ms before the cookies appear (the user signing in)
-        FAKE_EXIT_AFTER  ms after which it quits on its own
-        FAKE_LEARN    JSON [{ prompt, header, url? }] sent as requests once a page is attached */
+   Env: FAKE_COOKIES  JSON [{ name, value, domain }]: the Google sign-in a plain
+                      window makes, then shown by Storage.getCookies
+        FAKE_DELAY    ms a plain window takes to sign in, then it closes (the user)
+        FAKE_EXIT_AFTER  ms after which it quits on its own (before signing in)
+        FAKE_SIGNED_IN   1: the profile is already signed in
+        FAKE_LEARN    JSON [{ prompt, header, url? }] sent as requests once a page is attached
+
+   Started without --remote-debugging-port it is the plain window a person
+   signs in to: no DevTools; it saves the sign-in to the profile and closes.
+   Every start is noted in the profile's launches.log. */
 import http from "node:http";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
 const profile = process.argv.find((a) => a.startsWith("--user-data-dir="))?.slice(16);
-const started = Date.now();
 const cookies = JSON.parse(process.env.FAKE_COOKIES || "[]");
 const delay = Number(process.env.FAKE_DELAY || 0);
 const learn = JSON.parse(process.env.FAKE_LEARN || "[]");
 const bodies = {};
+fs.mkdirSync(profile, { recursive: true });
+fs.appendFileSync(path.join(profile, "launches.log"), `${process.argv.slice(2).filter((a) => a.startsWith("--")).join(" ")}\n`);
+const signedInFile = path.join(profile, "signed-in");
+if (process.env.FAKE_EXIT_AFTER) setTimeout(() => process.exit(0), Number(process.env.FAKE_EXIT_AFTER));
+if (!process.argv.some((a) => a.startsWith("--remote-debugging-port"))) {
+  setTimeout(() => {
+    if (cookies.length) fs.writeFileSync(signedInFile, "1");
+    setTimeout(() => process.exit(0), 50);
+  }, delay);
+} else {
 /* a tiny protobuf writer, for the newer web app's processSession messages */
 const vint = (n) => { const out = []; do { let b = n & 0x7f; n = Math.floor(n / 128); if (n) b |= 0x80; out.push(b); } while (n); return Buffer.from(out); };
 const pb = (fields) => Buffer.concat(fields.map(([f, v]) => typeof v === "number"
@@ -42,7 +57,7 @@ server.on("upgrade", (req, socket) => {
   const handle = (m) => {
     const reply = (result = {}) => send({ id: m.id, result, ...(m.sessionId ? { sessionId: m.sessionId } : {}) });
     switch (m.method) {
-      case "Storage.getCookies": return reply({ cookies: Date.now() - started >= delay ? cookies : [] });
+      case "Storage.getCookies": return reply({ cookies: fs.existsSync(signedInFile) || process.env.FAKE_SIGNED_IN === "1" ? cookies : [] });
       case "Target.getTargets": return reply({ targetInfos: [{ targetId: "t1", type: "page", url: "https://gemini.google.com/app" }, { targetId: "t2", type: "service_worker" }] });
       case "Target.attachToTarget": return reply({ sessionId: "s1" });
       case "Network.enable":
@@ -106,4 +121,4 @@ server.on("upgrade", (req, socket) => {
 server.listen(0, "127.0.0.1", () => {
   fs.writeFileSync(path.join(profile, "DevToolsActivePort"), `${server.address().port}\n/devtools/browser/fake\n`);
 });
-if (process.env.FAKE_EXIT_AFTER) setTimeout(() => process.exit(0), Number(process.env.FAKE_EXIT_AFTER));
+}

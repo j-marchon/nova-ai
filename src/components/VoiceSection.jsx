@@ -67,7 +67,7 @@ export function VoiceSection({ voiceSettings, providers = [], onChange }) {
         </select>
         <p className="mt-1.5 text-[11px] text-zinc-500 leading-relaxed">
           {choices.find((c) => c.id === source)?.sub || "Pick where the voice comes from."}
-          {!choices.some((c) => c.id.startsWith("saved:")) && " Add an OpenAI key in Settings → Providers for natural voices."}
+          {!choices.some((c) => c.id.startsWith("saved:")) && " Add an OpenAI key in Settings → Model for natural voices."}
           {hasBridge && " Nova Bridge can't read aloud: subscriptions have no speech API."}
         </p>
       </Field>

@@ -7,8 +7,9 @@ export function chatAppearance(theme = {}, { hasBackground = false, moving = fal
   const fill = (color, opacity = alpha) => opacity === 0 ? "transparent" : withAlpha(color, opacity);
   return {
     alpha,
-    userBubbleBg: fill("var(--nv-user)"),
-    aiBubbleBg: fill("var(--nv-surface)"),
+    /* bubble greys (index.css), or a skin's own colours */
+    userBubbleBg: fill("var(--nv-bubble-user)"),
+    aiBubbleBg: fill("var(--nv-bubble-ai)"),
     userBubbleFg: "var(--nv-ink)",
     aiBubbleFg: "var(--nv-ink)",
     composerBg: fill("var(--nv-surface)"),

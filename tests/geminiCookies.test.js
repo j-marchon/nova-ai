@@ -19,7 +19,7 @@ const COOKIES = [
 ];
 
 afterEach(() => {
-  for (const k of ["FAKE_COOKIES", "FAKE_DELAY", "FAKE_EXIT_AFTER", "FAKE_LEARN"]) delete process.env[k];
+  for (const k of ["FAKE_COOKIES", "FAKE_DELAY", "FAKE_EXIT_AFTER", "FAKE_LEARN", "FAKE_SIGNED_IN"]) delete process.env[k];
 });
 
 /* a Firefox profile folder with the cookies the given rows describe */
@@ -27,9 +27,10 @@ function firefoxProfile(root, name, rows) {
   const dir = path.join(root, name);
   fs.mkdirSync(dir, { recursive: true });
   const db = new DatabaseSync(path.join(dir, "cookies.sqlite"));
-  db.exec("CREATE TABLE moz_cookies (name TEXT, value TEXT, host TEXT, lastAccessed INTEGER)");
-  const ins = db.prepare("INSERT INTO moz_cookies VALUES (?, ?, ?, ?)");
-  for (const r of rows) ins.run(...r);
+  db.exec("CREATE TABLE moz_cookies (name TEXT, value TEXT, host TEXT, lastAccessed INTEGER, originAttributes TEXT NOT NULL DEFAULT '', expiry INTEGER)");
+  const ins = db.prepare("INSERT INTO moz_cookies VALUES (?, ?, ?, ?, ?, ?)");
+  /* [name, value, host, lastAccessed, originAttributes = "", expiry = in a year (seconds)] */
+  for (const [n, v, h, at, attrs = "", exp = Math.floor(Date.now() / 1000) + 31536000] of rows) ins.run(n, v, h, at, attrs, exp);
   db.close();
 }
 
@@ -49,6 +50,31 @@ describe("Firefox", () => {
     expect(r).toEqual({ cookies: { "__Secure-1PSID": "new-psid", "__Secure-1PSIDTS": "new-ts", NID: "nid" }, authuser: 0, from: "Firefox" });
   });
 
+  it("keeps one first-party sign-in: no partitioned copies, no expired rows, no mixing of containers", async () => {
+    const root = tmp();
+    const past = Math.floor(Date.now() / 1000) - 60;
+    firefoxProfile(root, "p", [
+      ["__Secure-1PSID", "real-psid", ".google.com", 100],
+      ["__Secure-1PSIDTS", "real-ts", ".google.com", 100],
+      ["__Secure-1PSIDTS", "expired-ts", ".google.com", 950, "", past],
+      ["__Secure-1PSIDTS", "embedded-ts", ".google.com", 990, "^partitionKey=%28https%2Cyoutube.com%29"],
+      ["__Secure-1PSID", "work-psid", ".google.com", 999, "^userContextId=2"],
+      ["__Secure-1PSIDTS", "work-ts", ".google.com", 999, "^userContextId=2"],
+      ["NID", "accounts-nid", "accounts.google.com", 980],
+      ["NID", "nid", ".google.com", 10],
+    ]);
+    expect((await firefoxCookies({ roots: [root] })).cookies).toEqual({ "__Secure-1PSID": "real-psid", "__Secure-1PSIDTS": "real-ts", NID: "nid" });
+  });
+
+  it("takes a container's sign-in when the default jar has none, and reads millisecond expiries", async () => {
+    const root = tmp();
+    firefoxProfile(root, "p", [
+      ["__Secure-1PSID", "old-psid", ".google.com", 500, "", Date.now() - 1000],
+      ["__Secure-1PSID", "work-psid", ".google.com", 999, "^userContextId=2", Date.now() + 86400000],
+    ]);
+    expect((await firefoxCookies({ roots: [root] })).cookies).toEqual({ "__Secure-1PSID": "work-psid" });
+  });
+
   it("finds nothing when no profile has a Google sign-in", async () => {
     const root = tmp();
     firefoxProfile(root, "a", [["NID", "n", ".google.com", 1]]);
@@ -59,6 +85,7 @@ describe("Firefox", () => {
   it("knows where Firefox keeps profiles on each system", () => {
     expect(firefoxRoots({ platform: "linux", home: "/h" })).toContain("/h/.mozilla/firefox");
     expect(firefoxRoots({ platform: "linux", home: "/h" })).toContain("/h/snap/firefox/common/.mozilla/firefox");
+    expect(firefoxRoots({ platform: "linux", home: "/h", env: {} })).toContain(path.join("/h", ".config", "mozilla", "firefox"));
     expect(firefoxRoots({ platform: "win32", home: "C:\\Users\\a", env: { APPDATA: "C:\\Users\\a\\AppData\\Roaming" } })[0]).toMatch(/Mozilla.Firefox.Profiles$/);
     expect(firefoxRoots({ platform: "darwin", home: "/Users/a" })[0]).toBe("/Users/a/Library/Application Support/Firefox/Profiles");
   });
@@ -71,14 +98,28 @@ describe("Chrome-family browsers", () => {
     expect(chromiumCandidates({ env: { PATH: "/usr/bin" }, platform: "linux" }).some((c) => c.path === "/usr/bin/brave-browser")).toBe(true);
   });
 
-  it("waits for the sign-in, takes Google's cookies over DevTools and closes the browser", async () => {
+  it("signs in in a plain window (no DevTools port, which Google refuses), then reads the profile unseen", async () => {
     process.env.FAKE_COOKIES = JSON.stringify(COOKIES);
     process.env.FAKE_DELAY = "700";
     const profileDir = path.join(tmp(), "profile");
     const status = [];
     const r = await chromiumCookies({ profileDir, exe: fake, onStatus: (s) => status.push(s) });
     expect(r).toEqual({ cookies: { "__Secure-1PSID": "psid-value", "__Secure-1PSIDTS": "psidts-value", NID: "nid-value" }, authuser: 0, from: "Fake Chrome" });
-    expect(status[0]).toMatch(/Opening Fake Chrome/);
+    expect(status[0]).toMatch(/Sign in to Google in the Fake Chrome window, then close it/);
+    const launches = fs.readFileSync(path.join(profileDir, "launches.log"), "utf8").trim().split("\n");
+    expect(launches).toHaveLength(3);
+    expect(launches[1]).not.toMatch(/remote-debugging|headless/);
+    for (const l of [launches[0], launches[2]]) expect(l).toMatch(/--headless=new.*--remote-debugging-port/);
+  });
+
+  it("opens no window when the profile is already signed in", async () => {
+    process.env.FAKE_COOKIES = JSON.stringify(COOKIES);
+    process.env.FAKE_SIGNED_IN = "1";
+    const profileDir = path.join(tmp(), "profile");
+    const status = [];
+    expect((await chromiumCookies({ profileDir, exe: fake, onStatus: (s) => status.push(s) })).cookies["__Secure-1PSID"]).toBe("psid-value");
+    expect(status).toEqual([]);
+    expect(fs.readFileSync(path.join(profileDir, "launches.log"), "utf8").trim().split("\n")).toHaveLength(1);
   });
 
   it("says so when the browser is closed before anyone signed in", async () => {

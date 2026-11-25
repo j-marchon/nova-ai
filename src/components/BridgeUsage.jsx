@@ -106,7 +106,7 @@ function Antigravity({ name, u, now }) {
         </div>
       )}
 
-      <Note>A 5-hour allowance plus a weekly cap, reported per model. The window is judged by when a figure resets, so Weekly shows only when Google reports one.</Note>
+      <Note>5-hour and weekly allowances, per model.</Note>
     </Card>
   );
 }
@@ -139,7 +139,7 @@ function GeminiApp({ name, u, now }) {
       <p className="text-[11px] text-zinc-500" title={u.resetsAt ? clock(u.resetsAt) : undefined}>
         Resets at midnight Pacific time{left ? ` (in ${left})` : ""}
       </p>
-      <Note>Google does not report the Gemini app's remaining allowance; its daily limits vary by model and change often. This counts what passed through the Bridge.</Note>
+      <Note>Google does not report this allowance. Counted from Bridge traffic.</Note>
     </Card>
   );
 }
@@ -199,7 +199,7 @@ export function BridgeUsage({ settings }) {
 
       {state.status === "ok" && !ids.length && (
         <div className="p-4 rounded-3xl nv-glass">
-          <Note>Connect a subscription in Settings → Providers → Nova Bridge.</Note>
+          <Note>Connect a subscription in Settings → Nova Bridge.</Note>
         </div>
       )}
 

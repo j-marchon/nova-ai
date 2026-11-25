@@ -1447,7 +1447,7 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit, 
                 <div className="flex items-center gap-2">
                   <Zap size={13} className="text-zinc-100" />
                   <p className="text-xs text-zinc-400">
-                    {(data.settings.providers || []).length ? `Add your ${providerOf(data.settings).name} key in Settings → Providers to get replies.` : "Add a provider in Settings → Providers to get replies."}
+                    {(data.settings.providers || []).length ? `Add your ${providerOf(data.settings).name} key in Settings → Model to get replies.` : "Add a provider in Settings → Model to get replies."}
                   </p>
                 </div>
                 <Button size="sm" selected onClick={goSettings} style={{ color: "var(--acc)" }}>

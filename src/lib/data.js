@@ -262,6 +262,8 @@ export const emptyData = {
     skin: "nova",
     /* the skin in chats too (Look → Skin in chats); off, chats wear Nova's own */
     skinInChat: false,
+    /* Look → App icon: "auto" (the skin's own) or an icon kept whatever the skin (skins/icons.js) */
+    icon: "auto",
     accent: "#ffffff",
     /* "dark" | "light" | "auto" (follows the phone) */
     scheme: "dark",
@@ -410,6 +412,9 @@ export function normalizeData(input) {
       if (!Array.isArray(p.settings?.providers)) Object.assign(d.settings, providersFromLegacy(p.settings || {}));
       for (const k of ["apiKey", "model", "baseUrl", "source", "googleKey", "googleModel", "favoriteModels"]) delete d.settings[k];
       d.settings.providers = d.settings.providers.map((x) => ({ ...newProvider(x.preset), ...x }));
+      /* Nova Bridge is always there, first, under its own name (it cannot be edited or removed) */
+      const bridges = d.settings.providers.filter((x) => x.preset === "nova-bridge").map((x) => ({ ...x, name: "Nova Bridge" }));
+      d.settings.providers = [...(bridges.length ? bridges : [newProvider("nova-bridge", {}, d.settings.providers)]), ...d.settings.providers.filter((x) => x.preset !== "nova-bridge")];
       if (!d.settings.providers.some((x) => x.id === d.settings.activeProvider)) d.settings.activeProvider = d.settings.providers[0]?.id || "";
       if (!d.settings.voice || typeof d.settings.voice !== "object") {
         d.settings.voice = { ...DEFAULT_VOICE_SETTINGS };

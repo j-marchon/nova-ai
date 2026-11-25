@@ -14,7 +14,7 @@
    Development: npm run build, then npm run desktop. Packaged builds are made
    by desktop/build-desktop.mjs. */
 
-const { app, BrowserWindow, Menu, dialog, shell, nativeTheme, ipcMain } = require("electron");
+const { app, BrowserWindow, WebContentsView, Menu, dialog, shell, nativeTheme, ipcMain } = require("electron");
 const { spawn } = require("node:child_process");
 const http = require("node:http");
 const path = require("node:path");
@@ -34,6 +34,13 @@ const NOVA_DIR = packed ? path.join(__dirname, "nova") : path.join(ROOT, "dist")
 const ICON = path.join(NOVA_DIR, "icon-512.png");
 const PORT = Number(process.env.NOVA_DESKTOP_PORT) || 47615;
 const ORIGIN = `http://127.0.0.1:${PORT}`;
+/* Windows: no system title bar. The window is frameless (Windows 11 rounds
+   its corners); Nova's page fills it, and Nova's own bar (titlebar/), like
+   the Bridge window's, lies over its top on a clear background, so Nova's
+   background shows through it. The page keeps that strip free as it does a
+   phone's status bar (--safe-area-inset-top). */
+const OWN_BAR = process.platform === "win32";
+const BAR_HEIGHT = 40;
 
 const TYPES = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8",
@@ -89,21 +96,75 @@ function serveNova() {
 
 const BRIDGE_HOME = () => path.join(app.getPath("appData"), "nova-bridge-app");
 
-/* Start the Bridge program (or bring its window forward: a second start
-   hands over to the one running). A single-file build runs from a temporary
-   copy, so the file the user has is started: APPIMAGE (Linux), or the
-   portable .exe (Windows). */
-function startBridge() {
-  const env = { ...process.env };
-  delete env.ELECTRON_RUN_AS_NODE;
-  const target = env.APPIMAGE || env.PORTABLE_EXECUTABLE_FILE || process.execPath;
-  const args = app.isPackaged ? [BRIDGE_FLAG] : [__filename, BRIDGE_FLAG];
-  const child = spawn(target, args, { detached: true, stdio: "ignore", env, windowsHide: false });
-  child.on("error", (e) => dialog.showErrorBox("Nova Bridge could not start", e.message));
-  child.unref();
+/* The portable .exe unpacks all of Nova into a new Temp folder every time it
+   starts (and deletes it when Nova closes), so starting the .exe again for
+   the Bridge took as long as that unpacking, each time. Instead Nova keeps
+   one copy of its unpacked files in %LOCALAPPDATA%\Nova\portable, made in
+   the background once per build, and the Bridge starts from there at once.
+   Resolves that copy's Nova.exe, or null when it cannot be made. */
+let portableCopy = null;
+function portableBridgeExe() {
+  if (!process.env.PORTABLE_EXECUTABLE_FILE || process.platform !== "win32" || !app.isPackaged) return Promise.resolve(null);
+  portableCopy ??= (async () => {
+    /* original-fs: the app's archive (app.asar) is copied as a file, not opened as a folder */
+    const ofs = require("original-fs");
+    const from = path.dirname(process.execPath);
+    const archive = ofs.statSync(path.join(from, "resources", "app.asar"));
+    const root = path.join(process.env.LOCALAPPDATA || app.getPath("appData"), "Nova", "portable");
+    const name = `${app.getVersion()}-${archive.size}-${Math.round(archive.mtimeMs)}`;
+    const dir = path.join(root, name);
+    const exe = path.join(dir, path.basename(process.execPath));
+    if (ofs.existsSync(path.join(dir, ".complete")) && ofs.existsSync(exe)) return exe;
+    const partial = `${dir}.partial-${process.pid}`;
+    await ofs.promises.rm(partial, { recursive: true, force: true });
+    await ofs.promises.cp(from, partial, { recursive: true });
+    ofs.writeFileSync(path.join(partial, ".complete"), "");
+    await ofs.promises.rm(dir, { recursive: true, force: true });
+    await ofs.promises.rename(partial, dir);
+    /* older builds' copies. One a Bridge still runs from cannot be renamed
+       (its files are in use), so it stays, whole, until a later start;
+       an unfinished copy (Nova closed while copying) goes too. */
+    for (const old of ofs.readdirSync(root)) {
+      if (old === name) continue;
+      const gone = path.join(root, `${old}.partial-old-${process.pid}`);
+      try { await ofs.promises.rename(path.join(root, old), gone); } catch { continue; }
+      await ofs.promises.rm(gone, { recursive: true, force: true }).catch(() => {});
+    }
+    return exe;
+  })().catch((e) => {
+    console.warn("Nova: could not keep a copy for Nova Bridge:", e.message);
+    portableCopy = null;
+    return null;
+  });
+  return portableCopy;
 }
 
-/* ---------- the icon follows the skin (src/skins/icons.js) ----------
+/* Start the Bridge program (or bring its window forward: a second start
+   hands over to the one running). A single-file build runs from a temporary
+   copy, so it starts the file the user has (APPIMAGE on Linux), or for the
+   portable .exe its kept copy (above), or the .exe itself when there is
+   none. Resolves once the Bridge has been started; a start already under
+   way is not repeated. */
+let bridgeStarting = null;
+function startBridge() {
+  bridgeStarting ??= (async () => {
+    const env = { ...process.env };
+    delete env.ELECTRON_RUN_AS_NODE;
+    const target = env.APPIMAGE || (await portableBridgeExe()) || env.PORTABLE_EXECUTABLE_FILE || process.execPath;
+    const args = app.isPackaged ? [BRIDGE_FLAG] : [__filename, BRIDGE_FLAG];
+    await new Promise((resolve) => {
+      const child = spawn(target, args, { detached: true, stdio: "ignore", env, windowsHide: false });
+      child.once("spawn", resolve);
+      child.once("error", (e) => { dialog.showErrorBox("Nova Bridge could not start", e.message); resolve(); });
+      child.unref();
+    });
+    /* its window takes a moment to appear: a click meanwhile starts nothing more */
+    await new Promise((r) => setTimeout(r, 1500));
+  })().finally(() => { bridgeStarting = null; });
+  return bridgeStarting;
+}
+
+/* ---------- the app icon: the skin's own or the one picked in Look (src/skins/icons.js) ----------
    The window's icon, and on Linux the menu entries' too: the package's
    entries (/usr/share/applications) are copied to the user's own entries
    folder with the skin's icon, which take their place; Nova's own icon
@@ -153,10 +214,9 @@ function bridgeShortcut() {
   } catch (e) { console.warn("Nova: could not add Nova Bridge to the Start menu:", e.message); }
 }
 
-/* the skin Nova wears, for the Bridge window to match, and the icons */
-function shareSkin(id, window) {
+/* the skin Nova wears, for the Bridge window to match */
+function shareSkin(id) {
   const skin = typeof id === "string" && /^[a-z0-9-]{1,40}$/.test(id) ? id : "nova";
-  skinIcon(skin, window);
   const dir = BRIDGE_HOME();
   try {
     fs.mkdirSync(dir, { recursive: true });
@@ -172,13 +232,29 @@ if (bridgeMode) {
   runBridgeApp({ bridgeFile: packed ? path.join(ROOT, "bridge.mjs") : path.join(ROOT, "bridge", "bridge.mjs"), icon: ICON });
 } else if (!app.requestSingleInstanceLock()) app.quit();
 else {
-  /* Nova's page may ask for only these two things, and only Nova's own page */
-  const fromNova = (e) => !!win && e.sender === win.webContents && e.senderFrame === win.webContents.mainFrame && String(e.senderFrame.url).startsWith(ORIGIN + "/");
-  ipcMain.handle("nova:start-bridge", (e) => { if (fromNova(e)) startBridge(); });
-  ipcMain.handle("nova:skin", (e, id) => { if (fromNova(e)) shareSkin(id, win); });
+  /* Nova's page may ask for only these things, and only Nova's own page */
+  const fromNova = (e) => !!nova && e.sender === nova && e.senderFrame === nova.mainFrame && String(e.senderFrame.url).startsWith(ORIGIN + "/");
+  ipcMain.handle("nova:start-bridge", (e) => (fromNova(e) ? startBridge() : undefined));
+  ipcMain.handle("nova:skin", (e, id) => { if (fromNova(e)) { shareSkin(id); look.skin = typeof id === "string" ? id : "nova"; sendLook(); } });
+  ipcMain.handle("nova:icon", (e, id) => { if (fromNova(e)) skinIcon(typeof id === "string" ? id : "nova", win); });
+  ipcMain.handle("nova:scheme", (e, scheme) => { if (fromNova(e)) { look.scheme = scheme === "light" ? "light" : "dark"; sendLook(); } });
+  /* the title bar's buttons, from the title bar only */
+  ipcMain.handle("nova:bar", (e, action) => {
+    if (!win || !bar || e.sender !== bar.webContents) return;
+    if (action === "minimize") win.minimize();
+    else if (action === "maximize") { if (win.isMaximized()) win.unmaximize(); else win.maximize(); }
+    else if (action === "close") win.close();
+  });
 
   let win = null;
+  /* Nova's page (the window's own), and the title bar over it */
+  let nova = null;
+  let bar = null;
   let quitting = false;
+  const look = { skin: "nova", scheme: "dark" };
+  function sendLook() {
+    if (bar && win && !win.isDestroyed()) bar.webContents.send("nova:look", { ...look, maximized: win.isMaximized() });
+  }
 
   function showNova() {
     if (!win || win.isDestroyed()) return;
@@ -192,7 +268,7 @@ else {
     Menu.setApplicationMenu(Menu.buildFromTemplate([
       ...(process.platform === "darwin" ? [{ role: "appMenu" }] : []),
       { label: "Nova", submenu: [
-        { label: "Reload", accelerator: `${mod}+R`, click: () => win?.webContents.reload() },
+        { label: "Reload", accelerator: `${mod}+R`, click: () => nova?.reload() },
         { type: "separator" },
         { role: "quit" },
       ] },
@@ -219,24 +295,58 @@ else {
       title: "Nova",
       icon: ICON,
       autoHideMenuBar: true,
+      ...(OWN_BAR ? { frame: false } : {}),
       webPreferences: { contextIsolation: true, sandbox: true, spellcheck: true, preload: path.join(__dirname, "preload.cjs") },
     });
+    nova = win.webContents;
+    if (OWN_BAR) {
+      bar = new WebContentsView({ webPreferences: { contextIsolation: true, sandbox: true, preload: path.join(__dirname, "titlebar", "preload.cjs") } });
+      bar.setBackgroundColor("#00000000");
+      win.contentView.addChildView(bar);
+      const fit = () => bar.setBounds({ x: 0, y: 0, width: win.getContentSize()[0], height: BAR_HEIGHT });
+      fit();
+      win.on("resize", fit);
+      for (const ev of ["maximize", "unmaximize", "restore"]) win.on(ev, () => { fit(); sendLook(); });
+      bar.webContents.on("did-finish-load", sendLook);
+      bar.webContents.on("will-navigate", (e) => e.preventDefault());
+      bar.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+      bar.webContents.loadFile(path.join(__dirname, "titlebar", "index.html"));
+      nova.on("dom-ready", () => nova.insertCSS(`:root { --safe-area-inset-top: ${BAR_HEIGHT}px !important; }`));
+      /* a frameless window has no menu, so the menu's shortcuts are kept here */
+      const keys = (e, input) => {
+        if (input.type !== "keyDown") return;
+        const ctrl = input.control || input.meta;
+        const k = String(input.key).toLowerCase();
+        const act = ctrl && input.shift && k === "b" ? startBridge
+          : ctrl && !input.shift && k === "r" ? () => nova.reload()
+          : ctrl && input.shift && k === "i" ? () => nova.toggleDevTools()
+          : ctrl && k === "0" ? () => nova.setZoomLevel(0)
+          : ctrl && (k === "=" || k === "+") ? () => nova.setZoomLevel(nova.getZoomLevel() + 0.5)
+          : ctrl && k === "-" ? () => nova.setZoomLevel(nova.getZoomLevel() - 0.5)
+          : k === "f11" ? () => win.setFullScreen(!win.isFullScreen())
+          : null;
+        if (act) { e.preventDefault(); act(); }
+      };
+      nova.on("before-input-event", keys);
+      bar.webContents.on("before-input-event", keys);
+      win.on("closed", () => { if (!bar.webContents.isDestroyed()) bar.webContents.close(); bar = null; });
+    }
     /* the whole screen from the start; restoring gives the size above */
     win.maximize();
-    win.loadURL(ORIGIN + "/");
+    nova.loadURL(ORIGIN + "/");
     /* links to other sites open in the browser */
-    win.webContents.setWindowOpenHandler(({ url }) => {
+    nova.setWindowOpenHandler(({ url }) => {
       if (/^https?:/i.test(url) && !url.startsWith(ORIGIN + "/")) shell.openExternal(url);
       return { action: "deny" };
     });
-    win.webContents.on("will-navigate", (e, url) => {
+    nova.on("will-navigate", (e, url) => {
       if (url.startsWith(ORIGIN + "/")) return;
       e.preventDefault();
       if (/^https?:/i.test(url)) shell.openExternal(url);
     });
     /* backups and other files Nova saves: a titled dialog that starts in
        Documents/Nova, the folder the phone app uses too */
-    win.webContents.session.on("will-download", (_e, item) => {
+    nova.session.on("will-download", (_e, item) => {
       const name = item.getFilename() || "nova-file";
       const folder = path.join(app.getPath("documents"), "Nova");
       try { fs.mkdirSync(folder, { recursive: true }); } catch {}
@@ -245,7 +355,7 @@ else {
         defaultPath: path.join(folder, name),
       });
     });
-    win.on("closed", () => { win = null; if (!quitting) app.quit(); });
+    win.on("closed", () => { win = null; nova = null; if (!quitting) app.quit(); });
   }
 
   app.on("second-instance", showNova);
@@ -265,6 +375,8 @@ else {
     menu();
     createWindow();
     bridgeShortcut();
+    /* the portable .exe's copy for the Bridge, made while Nova opens */
+    setTimeout(() => portableBridgeExe(), 3000);
   });
 
   app.on("window-all-closed", () => app.quit());

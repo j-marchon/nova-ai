@@ -83,6 +83,9 @@ html, body { overscroll-behavior: none; overflow-x: clip; }
   --nv-muted: oklch(1 0 0 / .56); --nv-faint: oklch(1 0 0 / .47); /* 4.7:1 on black (WCAG AA text) */ --nv-control-base: oklch(1 0 0 / .06); --nv-control-edge-base: oklch(1 0 0 / .12);
   --nv-hairline: oklch(1 0 0 / .1); --nv-hairline-strong: oklch(1 0 0 / .22); --nv-grid: oklch(1 0 0 / .045);
   --nv-raised-base: oklch(0.145 0 0); --nv-pane-base: oklch(0.185 0 0); --nv-scrim: oklch(0 0 0 / .72); --nv-grain-o: .09;
+  /* chat bubbles: greys that stand off the page (lighter on dark), never
+     plain white or black; the user's a step stronger than the character's */
+  --nv-bubble-ai: oklch(0.26 0 0); --nv-bubble-user: oklch(0.36 0 0);
   --acc: oklch(1 0 0); --acc-2: oklch(1 0 0); --acc-3: oklch(1 0 0); --on-acc: oklch(0 0 0);
   --color-white: oklch(1 0 0); --color-black: oklch(0 0 0);
   /* the one colour outside the greys: deleting, and nothing else */
@@ -95,9 +98,12 @@ html, body { overscroll-behavior: none; overflow-x: clip; }
   --nv-muted: oklch(0 0 0 / .56); --nv-faint: oklch(0 0 0 / .54); /* 4.6:1 on white */ --nv-control-base: oklch(0 0 0 / .04); --nv-control-edge-base: oklch(0 0 0 / .12);
   --nv-hairline: oklch(0 0 0 / .1); --nv-hairline-strong: oklch(0 0 0 / .24); --nv-grid: oklch(0 0 0 / .05);
   --nv-raised-base: oklch(0.985 0 0); --nv-pane-base: oklch(0.985 0 0); --nv-scrim: oklch(0 0 0 / .28); --nv-grain-o: .06;
+  --nv-bubble-ai: oklch(0.91 0 0); --nv-bubble-user: oklch(0.83 0 0);
   --acc: oklch(0 0 0); --acc-2: oklch(0 0 0); --acc-3: oklch(0 0 0); --on-acc: oklch(1 0 0);
   --color-white: oklch(0 0 0); --color-black: oklch(1 0 0);
 }
+/* a skin pack (Aero) paints its own bubbles with its surface and user colours */
+:root[data-skin]:not([data-skin="minimal"]) { --nv-bubble-ai: var(--nv-surface); --nv-bubble-user: var(--nv-user); }
 .nv-root {
   --nv-control: var(--nv-control-base); --nv-pane: var(--nv-pane-base);
   --nv-control-edge: var(--nv-control-edge-base);
@@ -512,7 +518,8 @@ html[data-skin="minimal"] .nv-root { --nv-shadow: none; --nv-lamp-line: transpar
     background: color-mix(in oklch, var(--nv-bg) 88%, transparent);
   }
   .nv-rail-brand { display: flex; justify-content: center; padding-bottom: 22px; border-bottom: 1px solid var(--nv-line); }
-  .nv-nav-inner { grid-template-columns: 1fr; gap: 6px; }
+  /* Create, Chats and Settings share the rail's height below the mark */
+  .nv-nav-inner { grid-template-columns: 1fr; grid-auto-rows: minmax(64px, 1fr); gap: 6px; flex: 1; }
   .nv-nav button { min-height: 64px; }
   .nv-nav-marker::after { left: -11px; top: 50%; width: 1.5px; height: 22px; margin: -11px 0 0; }
   .nv-page-host { padding-left: calc(var(--nv-rail) + var(--sa-l)); }
@@ -656,6 +663,11 @@ html[data-skin="minimal"] .nv-root { --nv-shadow: none; --nv-lamp-line: transpar
     opacity: 0; pointer-events: none; transition: opacity .3s ease;
   }
   .nv-root[data-drawer="open"] .nv-drawer-scrim { opacity: 1; pointer-events: auto; }
+}
+/* the list beside or over a chat: each row runs to the panel's edges, its
+   content inset as the panel is, so the open chat's band fills the width */
+@media (min-width: 1024px) {
+  .nv-root:is([data-split="1"], [data-drawer]) .nv-tab-history .nv-row { margin-inline: -18px; padding-inline: 18px 12px; border-radius: 0; }
 }
 .nv-root[data-motion="off"][data-drawer] .nv-tab-history, .nv-root[data-motion="off"] .nv-drawer-scrim { transition: none !important; }
 
@@ -932,3 +944,12 @@ html[data-skin="minimal"] .nv-root { --nv-shadow: none; --nv-lamp-line: transpar
 @keyframes nv-live-beat { 0%, 100% { transform: scale(1); } 40% { transform: scale(1.18); } }
 .nv-root[data-motion="off"] .nv-live-ring, .nv-root[data-motion="off"] .nv-live > span:last-child, .nv-root[data-motion="calm"] .nv-live-ring { animation: none; }
 @media (prefers-reduced-motion: reduce) { .nv-live-ring, .nv-live > span:last-child { animation: none; } }
+/* a setup marker (Settings, and its Model tab, until a provider is set up):
+   the dot sends a slow ring out; still in Calm, Off and reduced motion */
+.nv-dot.nv-beacon { position: relative; }
+.nv-beacon::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--nv-ink); opacity: 0; pointer-events: none; animation: nv-live-ping 2.2s cubic-bezier(.22, 1, .36, 1) infinite; }
+.nv-root:is([data-motion="off"], [data-motion="calm"]) .nv-beacon::after { animation: none; }
+@media (prefers-reduced-motion: reduce) { .nv-beacon::after { animation: none; } }
+/* a list the system draws (a <select>'s options): the app's own colours, so
+   its text never matches its background in either mode */
+.nv-root select option, .nv-root select optgroup { background-color: var(--nv-pane-base); color: var(--nv-ink); }

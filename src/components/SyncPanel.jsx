@@ -104,14 +104,14 @@ export function SyncPanel({ data, update }) {
         <div className="flex-1 min-w-0">
           <p className="text-sm text-zinc-100">Sync with Nova Bridge</p>
           <p className="text-[11px] text-zinc-500 leading-snug mt-0.5">
-            Send puts this device's backup on the Bridge, the same file Back up now makes: characters, chats, personas, lorebooks, settings, response styles and appearance, plus API keys and skins when those switches above are on. Get brings it to another device. Each device keeps its own Bridge connection and UI size.
+            Send puts this device's backup on the Bridge; Get brings it here.
           </p>
         </div>
         {hasBridge && <Button size="sm" icon={RefreshCw} aria-label="Check the Bridge again" onClick={() => check()} disabled={!!busy} />}
       </div>
 
       {!hasBridge ? (
-        <p className="text-[11px] text-zinc-400">Add Nova Bridge in Settings → Providers on each device, and approve each one in the Bridge window.</p>
+        <p className="text-[11px] text-zinc-400">Connect Nova Bridge on each device first.</p>
       ) : (
         <div className="text-[11px] text-zinc-400 space-y-0.5" aria-live="polite">
           {busy === "status" && !meta ? <p>Asking the Bridge…</p>
@@ -143,7 +143,7 @@ export function SyncPanel({ data, update }) {
         <div className="px-3.5 py-3 rounded-2xl border border-[var(--nv-edge-ink)] bg-zinc-900 space-y-2.5">
           <p className="text-sm text-zinc-100">The Bridge's copy{meta?.device ? ` from ${meta.device}` : ""}</p>
           <p className="text-[11px] text-zinc-100">{backupSummary(pending.state, pending.skins)}{pending.took ? ` · got in ${secs(pending.took)}` : ""}</p>
-          <p className="text-[11px] text-zinc-400">Merge keeps everything on both, and the newer copy of anything changed on both; it never deletes characters or chats. Replace makes this device's library match the Bridge exactly. Either way this device takes the copy's settings, response styles and appearance, and keeps its own Bridge connection, UI size, and any key the copy does not carry. Skins from the Bridge are added and this device keeps its own.</p>
+          <p className="text-[11px] text-zinc-400">Merge keeps both, newer wins, nothing deleted. Replace matches the Bridge exactly. Settings and look come from the copy.</p>
           <div className="flex gap-2">
             <AccBtn onClick={() => apply("merge")} disabled={!!busy} className="flex-1">{busy === "merge" ? "Merging..." : "Merge"}</AccBtn>
             <Button onClick={() => apply("replace")} disabled={!!busy} className="flex-1">{busy === "replace" ? "Replacing..." : "Replace"}</Button>

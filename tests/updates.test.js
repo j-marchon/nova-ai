@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from "vitest";
-import { checkForUpdate, dailyUpdateCheck, isNewer, parseVersion, shortVersion, RELEASES_REPO } from "../src/lib/updates.js";
+import { checkForUpdate, bootUpdateCheck, isNewer, parseVersion, shortVersion, RELEASES_REPO } from "../src/lib/updates.js";
 
 const reply = (body, status = 200) => async (url) => {
   reply.urls.push(url);
@@ -33,20 +33,20 @@ describe("update check", () => {
     await expect(checkForUpdate("1.0.0", { fetchImpl: reply({}, 404) })).rejects.toThrow(/No release/);
   });
 
-  it("makes no request while it is off, and at most one a day when on", async () => {
-    expect(await dailyUpdateCheck(false, "1.0.0", { fetchImpl: reply({ tag_name: "v2.0.0" }) })).toBe(null);
+  it("makes no request while it is off, and asks on every launch when on", async () => {
+    expect(await bootUpdateCheck(false, "1.0.0", { fetchImpl: reply({ tag_name: "v2.0.0" }) })).toBe(null);
     expect(reply.urls).toHaveLength(0);
-    const t0 = 1_000_000_000_000;
-    const a = await dailyUpdateCheck(true, "1.0.0", { fetchImpl: reply({ tag_name: "v1.0.0" }), now: t0 });
+    const a = await bootUpdateCheck(true, "1.0.0", { fetchImpl: reply({ tag_name: "v1.0.0" }) });
     expect(a.newer).toBe(false);
-    await dailyUpdateCheck(true, "1.0.0", { fetchImpl: reply({ tag_name: "v1.0.0" }), now: t0 + 60_000 });
-    expect(reply.urls).toHaveLength(1);
-    await dailyUpdateCheck(true, "1.0.0", { fetchImpl: reply({ tag_name: "v1.0.1" }), now: t0 + 25 * 3600_000 });
+    const b = await bootUpdateCheck(true, "1.0.0", { fetchImpl: reply({ tag_name: "v1.0.1" }) });
+    expect(b.newer).toBe(true);
     expect(reply.urls).toHaveLength(2);
   });
 
-  it("never throws from the daily check", async () => {
+  it("never throws, and falls back to the last answer offline", async () => {
     const boom = async () => { throw new Error("offline"); };
-    expect(await dailyUpdateCheck(true, "1.0.0", { fetchImpl: boom })).toBe(null);
+    expect(await bootUpdateCheck(true, "1.0.0", { fetchImpl: boom })).toBe(null);
+    await bootUpdateCheck(true, "1.0.0", { fetchImpl: reply({ tag_name: "v1.0.1" }) });
+    expect((await bootUpdateCheck(true, "1.0.0", { fetchImpl: boom }))?.latest).toBe("1.0.1");
   });
 });

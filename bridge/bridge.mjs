@@ -132,7 +132,7 @@ class UpstreamError extends Error {
   }
 }
 
-const notConnected = (name) => new UpstreamError(`${name} is not connected. Connect it in Nova → Settings → Providers → Nova Bridge.`, 401);
+const notConnected = (name) => new UpstreamError(`${name} is not connected. Connect it in Nova → Settings → Nova Bridge.`, 401);
 
 /* ---------- Credential store ----------
 
@@ -201,6 +201,56 @@ function autoDiscoverCliCredentials() {
   if (changed) saveStore();
 }
 
+/* Antigravity's own sign-in (the agy CLI and app), which go-keyring keeps in
+   the system keychain as service "gemini", account "antigravity": a Go
+   oauth2 token, { token: { access_token, refresh_token, expiry }, id_token_email }.
+   Read fresh on every refresh and never copied, so signing out of
+   Antigravity signs the Bridge out too. NOVA_BRIDGE_AGY_CRED names a JSON
+   file to read instead (tests), or "none" to skip it.
+   shortcut: macOS and Linux follow go-keyring's documented layout, only Windows was tried. */
+const AGY_PS = "Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public class NovaCred{[DllImport(\"advapi32.dll\",CharSet=CharSet.Unicode)]public static extern bool CredReadW(string t,int y,int f,out IntPtr c);[StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)]public struct C{public int F;public int T;public string N;public string M;public long W;public int S;public IntPtr B;}}';$p=[IntPtr]::Zero;if([NovaCred]::CredReadW('gemini:antigravity',1,0,[ref]$p)){$c=[Runtime.InteropServices.Marshal]::PtrToStructure($p,[type][NovaCred+C]);$b=New-Object byte[] $c.S;[Runtime.InteropServices.Marshal]::Copy($c.B,$b,0,$c.S);[Console]::Out.Write([Convert]::ToBase64String($b))}";
+function readAgyCredential() {
+  const override = process.env.NOVA_BRIDGE_AGY_CRED;
+  if (override === "none") return Promise.resolve(null);
+  if (override) return Promise.resolve(readJson(override));
+  const [cmd, args] = process.platform === "win32"
+    ? ["powershell", ["-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(AGY_PS, "utf16le").toString("base64")]]
+    : process.platform === "darwin"
+      ? ["security", ["find-generic-password", "-s", "gemini", "-a", "antigravity", "-w"]]
+      : ["secret-tool", ["lookup", "service", "gemini", "username", "antigravity"]];
+  return new Promise((resolve) => execFile(cmd, args, { timeout: 15000, windowsHide: true }, (err, out) => {
+    if (err) return resolve(null);
+    let text = String(out).trim();
+    if (process.platform === "win32") text = Buffer.from(text, "base64").toString("utf8");
+    else if (text.startsWith("go-keyring-base64:")) text = Buffer.from(text.slice(18), "base64").toString("utf8");
+    try { resolve(JSON.parse(text)); } catch { resolve(null); }
+  }));
+}
+
+/* agy renews its own token and saves it back when asked for its model list
+   (about 2 s, no quota), so the Bridge needs no Google client of its own.
+   One run at a time however many chats wait. NOVA_BRIDGE_AGY_BIN names a
+   Node script to run instead (tests). */
+let agyRenewing = null;
+function renewAgy() {
+  const local = path.join(process.env.LOCALAPPDATA || "", "agy", "bin", "agy.exe");
+  const [bin, pre] = process.env.NOVA_BRIDGE_AGY_BIN ? [process.execPath, [process.env.NOVA_BRIDGE_AGY_BIN]]
+    : [process.platform === "win32" && fs.existsSync(local) ? local : "agy", []];
+  agyRenewing ??= new Promise((resolve) => execFile(bin, [...pre, "models"], { timeout: 30000, windowsHide: true }, () => resolve()))
+    .then(readAgyCredential)
+    .finally(() => { agyRenewing = null; });
+  return agyRenewing;
+}
+
+/* Use a signed-in Antigravity at once, unless signed out here. */
+async function discoverAgy() {
+  if (authStore.antigravity || authStore.skipCli.includes("antigravity")) return;
+  const cred = await readAgyCredential();
+  if (!cred?.token?.refresh_token || authStore.antigravity) return;
+  authStore.antigravity = { source: "agy", email: cred.id_token_email || "", project: "" };
+  saveStore();
+}
+
 let authStore = loadStore();
 autoDiscoverCliCredentials();
 
@@ -215,7 +265,7 @@ const checkClaude = () => claudeStatus().then((s) => { claudeLive = s; return s;
 const isConnected = (id) => {
   const s = authStore[id];
   if (id === "claude") return s?.source === "claude-code" && claudeLive?.loggedIn !== false;
-  return !!(s && (s.refresh_token || s.access_token || s.oauth_token || s.cookies?.["__Secure-1PSID"] || s.source === "codex-cli"));
+  return !!(s && (s.refresh_token || s.access_token || s.oauth_token || s.cookies?.["__Secure-1PSID"] || s.source === "codex-cli" || s.source === "agy"));
 };
 const connectedProviders = () => PROVIDER_IDS.filter(isConnected);
 
@@ -223,11 +273,23 @@ const connectedProviders = () => PROVIDER_IDS.filter(isConnected);
 
 const expiring = (at) => !at || Date.now() > Number(at) - 60000;
 
+/* A release bundle (desktop/build-desktop.mjs) defines __NOVA_BUILT_GOOGLE__;
+   a checkout does not. A download without the Google client says so in plain
+   words; only someone running Nova from its source is pointed at .env. */
+const BUNDLED = typeof __NOVA_BUILT_GOOGLE__ !== "undefined";
+const googleReady = (channel) => !!(GOOGLE[channel]?.clientId && GOOGLE[channel]?.clientSecret);
+const GOOGLE_MISSING = "Sign in to Antigravity on this computer, then restart Nova Bridge.";
 function googleClient(channel) {
   const cfg = GOOGLE[channel];
-  if (!cfg.clientId || !cfg.clientSecret) throw new UpstreamError(`Google sign-in is not set up in this copy of Nova Bridge. To use it, put NOVA_GOOGLE_CLIENT_ID and NOVA_GOOGLE_CLIENT_SECRET in a file named .env in ${process.env.NOVA_BRIDGE_ENV_DIR || "the Bridge's folder"}, then restart Nova.`, 503);
+  if (!googleReady(channel)) {
+    throw new UpstreamError(BUNDLED ? GOOGLE_MISSING
+      : `Google sign-in is not set up in this copy of Nova Bridge. To use it, put NOVA_GOOGLE_CLIENT_ID and NOVA_GOOGLE_CLIENT_SECRET in a file named .env in ${process.env.NOVA_BRIDGE_ENV_DIR || "the Bridge's folder"}, then restart Nova.`, 503);
+  }
   return cfg;
 }
+
+/* settled once an Antigravity sign-in has been looked for (tests wait on it) */
+export const agyDiscovered = discoverAgy().catch(() => {});
 
 function upstreamFetch(address, init) {
   const url = new URL(address);
@@ -251,16 +313,33 @@ async function ensureGoogleAuth(channel, force = false) {
   const cfg = GOOGLE[channel];
   const name = "Antigravity";
   if (!g) throw notConnected(name);
-  if ((force || !g.access_token || expiring(g.expires_at)) && g.refresh_token) {
+  const stale = force || !g.access_token || expiring(g.expires_at);
+  let refresh = stale && g.refresh_token;
+  if (stale && g.source === "agy") {
+    let t = (await readAgyCredential())?.token;
+    /* force: Google refused the token the Bridge had, so agy renews it */
+    if (t?.refresh_token && (force || expiring(Date.parse(t.expiry)))) t = (await renewAgy())?.token;
+    if (!t?.refresh_token) throw new UpstreamError(`${name} is signed out. Sign in to Antigravity again, or connect it here.`, 401);
+    const at = Date.parse(t.expiry);
+    if (t.access_token && !expiring(at) && t.access_token !== (force && g.access_token)) {
+      g.access_token = t.access_token;
+      g.expires_at = at;
+      saveStore();
+    } else if (googleReady(channel)) refresh = t.refresh_token;
+    else throw new UpstreamError(`${name} could not renew its sign-in. Open Antigravity (or run agy) once, then try again.`, 401);
+  }
+  if (refresh) {
     googleClient(channel);
     const { res, data } = await postForm("https://oauth2.googleapis.com/token", {
       client_id: cfg.clientId,
       client_secret: cfg.clientSecret,
-      refresh_token: g.refresh_token,
+      refresh_token: refresh,
       grant_type: "refresh_token",
     });
     if (!res.ok || !data.access_token) {
-      throw new UpstreamError(`${name} sign-in expired (${data.error_description || data.error || res.status}). Connect it again.`, 401);
+      throw new UpstreamError(g.source === "agy"
+        ? `Could not use your Antigravity sign-in (${data.error_description || data.error || res.status}). Sign out here, then connect it with Sign in.`
+        : `${name} sign-in expired (${data.error_description || data.error || res.status}). Connect it again.`, 401);
     }
     g.access_token = data.access_token;
     g.expires_at = Date.now() + Number(data.expires_in || 3600) * 1000;
@@ -1528,7 +1607,7 @@ async function handleChat(req, res) {
     requestedModel = (await activeModelsList())[0]?.id || "";
     if (!requestedModel) {
       const problems = connected.map((p) => authStore[p]?.problem).filter(Boolean);
-      throw new UpstreamError(problems[0] || "No subscription is connected. Connect one in Nova → Settings → Providers.", connected.length ? 403 : 401);
+      throw new UpstreamError(problems[0] || "No subscription is connected. Connect one in Nova → Settings → Nova Bridge.", connected.length ? 403 : 401);
     }
   }
   const route = resolveSubscriptionModel(requestedModel, connected);
@@ -1751,7 +1830,7 @@ async function receiveSync(req) {
 }
 
 async function handleSync(req, res, pathname) {
-  if (!req.isAdmin && !req.deviceId) return json(res, 403, errorBody(403, "Sync needs this device approved in the Bridge window. Request device access in Settings → Providers → Nova Bridge."));
+  if (!req.isAdmin && !req.deviceId) return json(res, 403, errorBody(403, "Sync needs this device approved in the Bridge window. Request device access in Settings → Nova Bridge."));
   const data = pathname.endsWith("/data");
   if (req.method === "GET" && !data) return json(res, 200, syncMeta());
   if (req.method === "GET") {
@@ -1982,7 +2061,10 @@ export function bridgeInfo() {
     requests: stats.requests,
     errors: stats.errors,
     lastError: stats.last,
-    subscriptions: SUBSCRIPTION_PROVIDERS.map((p) => ({ id: p.id, name: p.name || p.id, connected: connected.includes(p.id), problem: authStore[p.id]?.problem || null, flow: bridgeFlow(p.id) })),
+    subscriptions: SUBSCRIPTION_PROVIDERS.map((p) => ({ id: p.id, name: p.name || p.id, connected: connected.includes(p.id), problem: authStore[p.id]?.problem || null, flow: bridgeFlow(p.id),
+      ...(authStore[p.id]?.source === "agy" ? { note: `Using Antigravity on this computer${authStore[p.id].email ? ` (${authStore[p.id].email})` : ""}` } : {}),
+      /* a Google sign-in this build cannot offer: shown, but without a Sign in button */
+      ...(GOOGLE[p.id] && BUNDLED && !googleReady(p.id) ? { unavailable: GOOGLE_MISSING } : {}) })),
     pairedDevices: deviceAccess.list(),
     pending: deviceAccess.list().filter((d) => d.status === "pending"),
     sessions,
@@ -2040,7 +2122,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToP
 ⚡ Nova Bridge is running
    This computer:   http://localhost:${PORT}/v1
    Other devices:   ${LAN && ip ? `${ip} (same network, approved in the Bridge window)` : "disabled (this computer only)"}
-   Connected:       ${active.length ? active.join(", ") : "nothing yet — Nova → Settings → Providers → Nova Bridge"}
+   Connected:       ${active.length ? active.join(", ") : "nothing yet — Nova → Settings → Nova Bridge"}
 `);
     if (process.platform === "win32") console.log("   If Windows asks whether Node.js may use the network, allow Private networks so your phone can reach it.\n");
   }, (e) => { console.error(`⚠️  ${e.message}`); process.exit(1); });

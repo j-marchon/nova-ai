@@ -29,7 +29,7 @@ export function UpdatePanel({ data, update }) {
         on={on}
         onClick={() => update({ settings: { ...data.settings, updateCheck: !on } })}
         title="Check for updates"
-        sub="Off by default. When on, Nova asks GitHub once a day whether a newer version is out. Nothing about you or your library is sent."
+        sub="Asks GitHub at each start. Nothing about you is sent."
       />
       <div className="flex flex-wrap items-center gap-3">
         <Button size="sm" icon={RefreshCw} onClick={check} disabled={busy}>{busy ? "Checking…" : "Check now"}</Button>

@@ -142,18 +142,12 @@ describe("web backup controls", () => {
   });
 });
 
-describe("visible first-use checklist", () => {
-  it("shows setup and privacy on an empty Create page and opens existing Settings navigation", async () => {
-    const goSettings = vi.fn();
-    const props = { data: emptyData, update: vi.fn(), onEdit: vi.fn(), startChat: vi.fn(), startGroupChat: vi.fn(), openChat: vi.fn(), goSettings };
+describe("first use", () => {
+  it("shows no setup checklist on an empty Create page", async () => {
+    const props = { data: emptyData, update: vi.fn(), onEdit: vi.fn(), startChat: vi.fn(), startGroupChat: vi.fn(), openChat: vi.fn() };
     await render(<CreatePage {...props} />);
-    expect(host.querySelector('[aria-label="Getting started"]')).not.toBeNull();
-    expect(host.textContent).toContain("Settings → Providers");
-    expect(host.querySelector('a[href="./privacy.html"]')).not.toBeNull();
-    await click(button("Open Settings"));
-    expect(goSettings).toHaveBeenCalledOnce();
-    await render(<CreatePage {...props} data={{ ...emptyData, chats: [{ id: "existing" }] }} />);
     expect(host.querySelector('[aria-label="Getting started"]')).toBeNull();
+    expect(host.textContent).not.toContain("Start chatting in a few minutes");
   });
 });
 

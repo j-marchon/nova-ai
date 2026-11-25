@@ -18,7 +18,7 @@ const { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, shell, nativeTheme
 const path = require("node:path");
 const fs = require("node:fs");
 const { randomBytes } = require("node:crypto");
-const { pathToFileURL } = require("node:url");
+const { pathToFileURL, fileURLToPath } = require("node:url");
 
 /* the skins the Bridge window can wear; any other falls back to Nova's own */
 const SKINS = ["nova", "minimal", "aero"];
@@ -186,8 +186,12 @@ function createBridgeHost({
     return { ...b.bridgeInfo(), starting, problem: lastProblem, skin: currentSkin(), platform: process.platform };
   }
 
-  const panelUrl = pathToFileURL(path.join(__dirname, "index.html")).href;
-  const fromPanel = (e) => win && e.sender === win.webContents && e.senderFrame === win.webContents.mainFrame && e.senderFrame.url === panelUrl;
+  /* compared as paths, not as URL text: Node and Chromium escape some
+     characters differently (the portable .exe runs from a short Temp path
+     such as C:\Users\JOHNDO~1\..., whose "~" Node writes as %7E) */
+  const panelPath = path.join(__dirname, "index.html");
+  const isPanel = (url) => { try { return fileURLToPath(url) === panelPath; } catch { return false; } };
+  const fromPanel = (e) => win && e.sender === win.webContents && e.senderFrame === win.webContents.mainFrame && isPanel(e.senderFrame.url);
   const handle = (name, fn) => ipcMain.handle(name, (e, ...args) => {
     if (!fromPanel(e)) throw new Error("Untrusted window");
     return fn(...args);

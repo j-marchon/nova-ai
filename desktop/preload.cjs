@@ -1,8 +1,11 @@
 /* What Nova's page may ask of the desktop app: start Nova Bridge (its own
-   program, in its own window) and tell it which skin Nova wears. */
+   program, in its own window), tell it and the title bar which skin and
+   scheme Nova wears, and which icon the app wears. */
 const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("novaDesktop", {
   platform: process.platform,
   startBridge: () => ipcRenderer.invoke("nova:start-bridge"),
   setSkin: (id) => ipcRenderer.invoke("nova:skin", String(id || "nova")),
+  setScheme: (scheme) => ipcRenderer.invoke("nova:scheme", String(scheme || "dark")),
+  setIcon: (id) => ipcRenderer.invoke("nova:icon", String(id || "nova")),
 });

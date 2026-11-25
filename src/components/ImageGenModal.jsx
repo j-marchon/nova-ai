@@ -72,7 +72,7 @@ export function ImageGenModal({
 
       const backend = resolveImageBackend(settings, { provider, apiKey, endpoint, model });
       if (!backend) throw new Error(provider.startsWith("saved:")
-        ? "That provider is gone or has no key. Pick another, or set it up in Settings → Providers."
+        ? "That provider is gone or has no key. Pick another, or set it up in Settings → Model."
         : "Add an OpenAI key, or pick another provider.");
 
       const result = await generateImage({
@@ -137,7 +137,7 @@ export function ImageGenModal({
           </select>
           <p className="mt-1.5 text-[11px] text-zinc-500 leading-relaxed">
             {choices.find((c) => c.id === provider)?.sub || "Pick where pictures are made."}
-            {!choices.some((c) => c.id.startsWith("saved:")) && " Add Nova Bridge (ChatGPT) or an OpenAI key in Settings → Providers to use them here."}
+            {!choices.some((c) => c.id.startsWith("saved:")) && " Add Nova Bridge (ChatGPT) or an OpenAI key in Settings → Model to use them here."}
           </p>
         </Field>
 
