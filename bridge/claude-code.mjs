@@ -11,19 +11,13 @@
    terms only cover a Pro/Max plan inside Claude Code and claude.ai, so
    using it from another app can get the account limited or banned. */
 
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 
 const WIN = process.platform === "win32";
-/* model aliases the CLI itself resolves to the newest of each family */
-export const CLAUDE_MODELS = [
-  { id: "opus", name: "Claude Opus" },
-  { id: "sonnet", name: "Claude Sonnet" },
-  { id: "haiku", name: "Claude Haiku" },
-];
 const MODEL_OK = /^[a-z0-9][a-z0-9.\-[\]]{0,63}$/i;
 const MAX_AT_ONCE = 2;
 let running = 0;
@@ -53,10 +47,12 @@ export function claudeBinary(env = process.env) {
 }
 
 /* The CLI refuses to start inside another Claude Code session, and must not
-   pick up a session's settings: those variables are left out. */
+   pick up a session's settings: those variables are left out. So are the
+   ANTHROPIC_* ones (an API key, a Foundry or Bedrock setup): they override
+   the claude.ai sign-in, and the Bridge only ever uses the subscription. */
 function cleanEnv() {
   const env = { ...process.env };
-  for (const k of Object.keys(env)) if (k === "CLAUDECODE" || k.startsWith("CLAUDE_CODE_")) delete env[k];
+  for (const k of Object.keys(env)) if (k === "CLAUDECODE" || k.startsWith("CLAUDE_CODE_") || k.startsWith("ANTHROPIC_")) delete env[k];
   return env;
 }
 
@@ -116,6 +112,34 @@ export async function claudeStatus({ fresh = false } = {}) {
   }
   statusCache = { at: Date.now(), value };
   return value;
+}
+
+/* Claude Code's saved claude.ai sign-in, read only: ~/.claude/.credentials.json,
+   or the keychain on a Mac. { accessToken, expiresAt } or null. */
+function claudeCredential() {
+  const file = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"), ".credentials.json");
+  const parse = (text) => { try { return JSON.parse(text).claudeAiOauth || null; } catch { return null; } };
+  if (fs.existsSync(file)) return Promise.resolve(parse(fs.readFileSync(file, "utf8")));
+  if (process.platform !== "darwin") return Promise.resolve(null);
+  return new Promise((resolve) => execFile("security", ["find-generic-password", "-s", "Claude Code-credentials", "-w"], { timeout: 15000 }, (err, out) => resolve(err ? null : parse(out))));
+}
+
+/* The models this sign-in may use, as Anthropic lists them: [{ id, name }].
+   Claude Code renews its own token; an expired one is renewed by letting it
+   answer one word first.
+   shortcut: that renewal spends one tiny reply about every 8 hours; call Anthropic's token endpoint if it ever matters. */
+export async function claudeModels() {
+  let c = await claudeCredential();
+  if (c?.accessToken && c.expiresAt && Date.now() > c.expiresAt - 60000) {
+    await run(["-p", "--model", "haiku", "--tools", "", "--strict-mcp-config", "--setting-sources", "", "--disable-slash-commands", "--no-session-persistence"], { input: "Reply with: ok", timeout: 60000 }).catch(() => {});
+    c = await claudeCredential();
+  }
+  if (!c?.accessToken) throw Object.assign(new Error("Claude Code is signed out."), { status: 401 });
+  const res = await fetch("https://api.anthropic.com/v1/models?limit=1000", {
+    headers: { Authorization: `Bearer ${c.accessToken}`, "anthropic-version": "2023-06-01", "anthropic-beta": "oauth-2025-04-20" },
+  });
+  if (!res.ok) throw Object.assign(new Error(`Anthropic would not list Claude's models (${res.status}).`), { status: res.status });
+  return ((await res.json()).data || []).filter((m) => m.id).map((m) => ({ id: m.id, name: m.display_name || m.id, ctx: m.max_input_tokens }));
 }
 
 /* Claude Code's own sign-in: it opens the browser and waits for claude.ai

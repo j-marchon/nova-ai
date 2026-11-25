@@ -634,6 +634,19 @@ export function attachAdvancedSamplers(body, style, ep) {
     body.dynatemp_max = p.dynatemp_max;
     body.dynatemp_exponent = p.dynatemp_exponent;
   }
+  /* under every name SillyTavern sends them by, since backends differ
+     (typical_p / typical, nsigma / top_n_sigma) */
+  if (p.xtc_probability > 0) {
+    body.xtc_threshold = p.xtc_threshold;
+    body.xtc_probability = p.xtc_probability;
+  }
+  if (p.typical_p < 1) body.typical_p = body.typical = p.typical_p;
+  if (p.tfs < 1) body.tfs = p.tfs;
+  if (p.smoothing_factor > 0) {
+    body.smoothing_factor = p.smoothing_factor;
+    body.smoothing_curve = p.smoothing_curve;
+  }
+  if (p.nsigma > 0) body.nsigma = body.top_n_sigma = p.nsigma;
 }
 
 /* ---------- the sampler on the wire ----------

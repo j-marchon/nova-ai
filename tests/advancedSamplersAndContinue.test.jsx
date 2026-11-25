@@ -69,6 +69,13 @@ describe("Advanced Samplers Normalization in styles.js", () => {
       dynatemp_min: 0,
       dynatemp_max: 0,
       dynatemp_exponent: 1.0,
+      xtc_threshold: 0.1,
+      xtc_probability: 0,
+      typical_p: 1,
+      tfs: 1,
+      smoothing_factor: 0,
+      smoothing_curve: 1,
+      nsigma: 0,
     });
 
     /* they live in each model's fine tuning, not at the top of settings */
@@ -280,6 +287,28 @@ describe("Payload Forwarding in api.js", () => {
     expect(body.cfg_scale).toBeUndefined();
     expect(body.dynatemp_min).toBeUndefined();
     expect(body.dynatemp_max).toBeUndefined();
+  });
+
+  it("sends XTC, typical P, TFS, smoothing and top nσ under SillyTavern's names, only when set", () => {
+    const set = { temperature: 0.9, max_tokens: 800, xtc_threshold: 0.15, xtc_probability: 0.5, typical_p: 0.9, tfs: 0.95, smoothing_factor: 0.3, smoothing_curve: 1.5, nsigma: 1.2 };
+    const body = samplerBody(set, openRouterEp);
+    expect(body).toMatchObject({ xtc_threshold: 0.15, xtc_probability: 0.5, typical_p: 0.9, typical: 0.9, tfs: 0.95, smoothing_factor: 0.3, smoothing_curve: 1.5, nsigma: 1.2, top_n_sigma: 1.2 });
+    for (const ep of [{ src: "local", preset: {} }, { src: "custom", preset: {} }]) expect(samplerBody(set, ep).xtc_probability).toBe(0.5);
+
+    const neutral = samplerBody({ temperature: 0.9, max_tokens: 800, ...DEFAULT_ADVANCED_SAMPLERS }, openRouterEp);
+    for (const k of ["xtc_threshold", "xtc_probability", "typical_p", "typical", "tfs", "smoothing_factor", "smoothing_curve", "nsigma", "top_n_sigma"]) expect(neutral[k]).toBeUndefined();
+
+    for (const ep of [basicEp, googleEp, codexEp, { src: "anthropic", protocol: "anthropic", preset: {} }]) {
+      const b = samplerBody(set, ep);
+      for (const k of ["xtc_probability", "typical_p", "tfs", "smoothing_factor", "nsigma"]) expect(b[k]).toBeUndefined();
+    }
+  });
+
+  it("reads the new samplers from a SillyTavern text-completion preset, bounded", () => {
+    const st = { temp: 1, typical_p: 0.92, tfs: 0.97, smoothing_factor: 0.25, smoothing_curve: 1, xtc_threshold: 0.1, xtc_probability: 0.4, nsigma: 9 };
+    expect(readSampler(st)).toMatchObject({ typical_p: 0.92, tfs: 0.97, smoothing_factor: 0.25, smoothing_curve: 1, xtc_threshold: 0.1, xtc_probability: 0.4, nsigma: 5 });
+    expect(readSampler({ top_n_sigma: 1.5, typical: 0.8 })).toMatchObject({ nsigma: 1.5, typical_p: 0.8 });
+    expect(normalizeAdvancedSamplers({ xtc_probability: 2, smoothing_curve: 0 })).toMatchObject({ xtc_probability: 1, smoothing_curve: 1 });
   });
 
   it("silently omits advanced samplers for basic endpoints like Groq", () => {

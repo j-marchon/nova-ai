@@ -97,6 +97,20 @@ await build({
   logLevel: "warning",
 });
 
+/* Update, in the app (main.cjs): electron-updater as one file */
+await build({
+  entryPoints: [path.join(ROOT, "node_modules", "electron-updater", "out", "main.js")],
+  outfile: path.join(STAGE, "updater.cjs"),
+  bundle: true,
+  minify: true,
+  platform: "node",
+  format: "cjs",
+  external: ["electron"],
+  target: "node22",
+  legalComments: "none",
+  logLevel: "warning",
+});
+
 /* Nova's web build */
 await cp(path.join(ROOT, "dist"), path.join(STAGE, "nova"), { recursive: true });
 await rm(path.join(STAGE, "nova", "_headers"), { force: true });
@@ -107,7 +121,7 @@ await writeFile(path.join(STAGE, "package.json"), JSON.stringify({
   version: pkg.version,
   description: "AI chat and roleplay with your own providers",
   author: { name: "Nova", email: "nova@users.noreply.github.com" },
-  homepage: "https://github.com/j-marchon/nova-releases",
+  homepage: "https://github.com/j-marchon/nova-ai",
   /* the Linux menu entry (nova.desktop) and the running window match */
   desktopName: "nova.desktop",
   main: "main.cjs",
@@ -151,22 +165,33 @@ const config = {
     executableName: "nova",
     synopsis: "AI chat and roleplay with your own providers",
   },
-  deb: { artifactName: "Nova-${version}-amd64.deb", fpm: [`${bridgeEntry}=/usr/share/applications/nova-bridge.desktop`] },
+  /* electron-builder's own dependencies, plus secret-tool: the Bridge reads
+     Antigravity's sign-in from the keyring with it. apt installs what is missing. */
+  deb: {
+    artifactName: "Nova-${version}-amd64.deb",
+    fpm: [`${bridgeEntry}=/usr/share/applications/nova-bridge.desktop`],
+    depends: ["libgtk-3-0", "libnotify4", "libnss3", "libxss1", "libxtst6", "xdg-utils", "libatspi2.0-0", "libuuid1", "libsecret-1-0", "libsecret-tools"],
+  },
   win: {
     target: [...(canBuildInstaller ? [{ target: "nsis", arch: ["x64"] }] : []), { target: "portable", arch: ["x64"] }],
     icon: path.join(ROOT, "public", "icon-512.png"),
-    signAndEditExecutable: false,
+    /* writes the icon and name into Nova.exe (rcedit, run on Windows or Wine; nothing is
+       signed without a certificate). Without it Windows shows Electron's icon on the
+       Start-menu entries, the taskbar and the Nova Bridge shortcut. */
+    signAndEditExecutable: canBuildInstaller,
   },
   portable: { artifactName: "Nova-${version}-portable.exe" },
   /* a Start-menu entry and an uninstaller, for this user only (no admin);
      uninstalling keeps the library in %APPDATA%\Nova */
   nsis: { artifactName: "Nova-${version}-setup.exe", oneClick: false, perMachine: false, allowToChangeInstallationDirectory: true, deleteAppDataOnUninstall: false, include: path.join(ROOT, "desktop", "installer.nsh") },
-  publish: null,
+  /* where Update looks (main.cjs): the public releases. Builds write latest.yml (Windows) and
+     latest-linux.yml (AppImage and .deb) beside the files; upload them with the release. */
+  publish: { provider: "github", owner: "j-marchon", repo: "nova-ai", releaseType: "release" },
 };
 const configFile = path.join(ROOT, "build", "desktop-builder.json");
 await writeFile(configFile, JSON.stringify(config, null, 2));
 
 const targets = [...(linux ? ["--linux"] : []), ...(win ? ["--win"] : [])];
-const run = spawnSync(process.execPath, [path.join(ROOT, "node_modules/electron-builder/cli.js"), "--config", configFile, "--projectDir", STAGE, ...targets],
+const run = spawnSync(process.execPath, [path.join(ROOT, "node_modules/electron-builder/cli.js"), "--config", configFile, "--projectDir", STAGE, "--publish", "never", ...targets],
   { stdio: "inherit", cwd: ROOT, env: { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: "false" } });
 process.exit(run.status ?? 1);

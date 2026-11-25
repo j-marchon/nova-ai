@@ -167,14 +167,14 @@ export function calculateCardTokens({ character, universe, ensemble, persona, us
   return estimateTokens(text.trim());
 }
 
-export function calculateLoreTokens({ lorebooks, history = [], settings = {} } = {}) {
+export function calculateLoreTokens({ lorebooks, history = [], settings = {}, loreTimed } = {}) {
   if (!lorebooks) return 0;
   if (Array.isArray(lorebooks)) {
     if (lorebooks.length === 0) return 0;
     if (lorebooks[0]?.entries !== undefined) {
       const depth = settings?.loreDepth || DEFAULT_SCAN_DEPTH;
       const budget = settings?.loreBudget || DEFAULT_LORE_BUDGET;
-      const lore = selectLore(lorebooks, history, { depth, budget });
+      const lore = selectLore(lorebooks, history, { depth, budget, recursion: settings?.loreRecursion, timed: loreTimed });
       const active = [...(lore.constant || []), ...(lore.triggered || [])];
       return active.reduce((sum, e) => sum + estimateTokens(e.content || ""), 0);
     }
@@ -250,7 +250,7 @@ function historyTokens(history, settings, maxTokens, coveredOf) {
   const covered = memoryOn ? coveredOf() : Infinity;
   const budget = settings?.historyTokens || maxTokens || DEFAULT_HISTORY_TOKENS;
   const kept = trimHistory(history, budget, covered);
-  return kept.reduce((sum, m) => sum + estimateTokens(m.content || "") + (MSG_OVERHEAD || 4), 0);
+  return kept.reduce((sum, m) => (m.hidden ? sum : sum + estimateTokens(m.content || "") + (MSG_OVERHEAD || 4)), 0);
 }
 
 /**
@@ -282,6 +282,7 @@ export function breakdownTokens({
   scope,
   world,
   phone,
+  loreTimed,
 } = {}) {
   const max = Number(maxTokens) || settings?.historyTokens || DEFAULT_HISTORY_TOKENS;
   /* how far the summary reaches, worked out once for the two sections that
@@ -294,12 +295,12 @@ export function breakdownTokens({
     sections: {
       systemTokens: calculateSystemTokens({ character, universe, ensemble, persona, username, settings, history }),
       cardTokens: calculateCardTokens({ character, universe, ensemble, persona, username, vars }),
-      loreTokens: calculateLoreTokens({ lorebooks, history, settings }),
+      loreTokens: calculateLoreTokens({ lorebooks, history, settings, loreTimed }),
       noteTokens: calculateNoteTokens({ authorsNote, history }),
       memoryTokens: memoryTokens(memory, scene, () => (coveredOf() > 0 ? memory.summary.trim() : "")) + ambientTokens({ universe, world, phone }),
       historyTokens: historyTokens(history, settings, max, coveredOf),
     },
-    request: buildApiMessages({ character: character || { name: "Character" }, universe, ensemble, persona, username, lorebooks, authorsNote, memory, scene, history, settings, vars: { ...vars }, scope, world, phone }),
+    request: buildApiMessages({ character: character || { name: "Character" }, universe, ensemble, persona, username, lorebooks, authorsNote, memory, scene, history, settings, vars: { ...vars }, scope, world, phone, loreTimed }),
   }));
   const { systemTokens, cardTokens, loreTokens, noteTokens, memoryTokens: memTokens, historyTokens: histTokens } = sections;
   const totalTokens = request.reduce((sum, m) => sum + estimateTokens(m.content) + MSG_OVERHEAD, 0);

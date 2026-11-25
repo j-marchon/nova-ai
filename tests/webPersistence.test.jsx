@@ -146,7 +146,7 @@ describe("App durable persistence", () => {
     saveData.mockReturnValueOnce(first.promise).mockReturnValueOnce(latest.promise);
     serviceWorker.register.mockResolvedValue({ waiting: worker, addEventListener() {}, removeEventListener() {} });
     await render(<App />);
-    await click("Update available — save and reload");
+    await click("Update");
     await act(async () => captured.page.update({ username: "Edited during save" }));
     await act(async () => first.resolve());
     expect(saveData).toHaveBeenCalledTimes(2);
@@ -167,7 +167,7 @@ describe("WebUpdate activation guard", () => {
     const prepare = vi.fn().mockResolvedValue(undefined);
     startActivity({ kind: "reply", label: "Active request", owner: { chatId: "c1" } });
     await showUpdate(prepare);
-    await click("Update available — save and reload");
+    await click("Update");
     expect(prepare).not.toHaveBeenCalled();
     expect(worker.postMessage).not.toHaveBeenCalled();
     expect(host.textContent).toContain("Finish or cancel active requests");
@@ -176,17 +176,17 @@ describe("WebUpdate activation guard", () => {
   it("does not activate after a save rejection and allows a successful retry", async () => {
     const prepare = vi.fn().mockRejectedValueOnce(new Error("Storage full")).mockResolvedValueOnce(undefined);
     await showUpdate(prepare);
-    await click("Update available — save and reload");
+    await click("Update");
     expect(worker.postMessage).not.toHaveBeenCalled();
     expect(host.textContent).toContain("Save failed. Retry or export your data");
-    await click("Update available — save and reload");
+    await click("Update");
     expect(worker.postMessage).toHaveBeenCalledWith("ACTIVATE");
   });
 
   it("waits for the save promise before sending activation", async () => {
     const write = deferred();
     await showUpdate(() => write.promise);
-    await click("Update available — save and reload");
+    await click("Update");
     expect(worker.postMessage).not.toHaveBeenCalled();
     await act(async () => write.resolve());
     expect(worker.postMessage).toHaveBeenCalledWith("ACTIVATE");
@@ -195,7 +195,7 @@ describe("WebUpdate activation guard", () => {
   it("blocks activation when a model request starts while the save is pending", async () => {
     const write = deferred();
     await showUpdate(() => write.promise);
-    await click("Update available — save and reload");
+    await click("Update");
     startActivity({ kind: "reply", label: "New request", owner: { chatId: "c1" } });
     await act(async () => write.resolve());
     expect(worker.postMessage).not.toHaveBeenCalled();

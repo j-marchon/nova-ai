@@ -61,3 +61,37 @@ it("has agy renew an expired token, once for chats that wait together, and chats
   expect(fs.readFileSync(`${process.env.NOVA_BRIDGE_AGY_CRED}.runs`, "utf8")).toBe("models\n");
   vi.unstubAllGlobals();
 });
+
+it("lists only the models Antigravity's own picker shows", async () => {
+  vi.stubGlobal("fetch", vi.fn(async (url, init = {}) => {
+    const u = String(url);
+    if (u.startsWith(base)) return realFetch(url, { ...init, headers: { ...init.headers, Authorization: "Bearer test-bridge-key" } });
+    if (u.endsWith(":fetchAvailableModels")) return Response.json({
+      models: {
+        "gemini-4-hydrogen-high": { displayName: "Gemini 4 Hydrogen (High)" },
+        "gemini-2.5-flash": { displayName: "Gemini 3.5 Flash Lite" },
+        "gemini-4-argon-disabled": { displayName: "Gemini 4 Argon", disabled: true },
+        tab_flash_lite_preview: {},
+      },
+      agentModelSorts: [{ groups: [{ modelIds: ["gemini-4-hydrogen-high", "gemini-4-argon-disabled"] }] }],
+    });
+    return new Response("{}", { status: 500 });
+  }));
+  const d = await (await fetch(`${base}/v1/models`)).json();
+  expect(d.data.map((m) => m.id)).toEqual(["antigravity/gemini-4-hydrogen-high"]);
+  vi.unstubAllGlobals();
+});
+
+it("picks the sign-ins on this computer up again from Sign in, after a sign-out here", async () => {
+  const { bridgeSignIn, bridgeSignOut } = await import("../bridge/bridge.mjs");
+  const store = () => JSON.parse(fs.readFileSync(process.env.NOVA_BRIDGE_AUTH_FILE, "utf8"));
+  bridgeSignOut("antigravity");
+  expect(store().antigravity).toBeNull();
+  await bridgeSignIn("antigravity");
+  expect(store().antigravity).toMatchObject({ source: "agy", email: "someone@example.com" });
+  fs.mkdirSync(path.join(TMP, ".codex"), { recursive: true });
+  fs.writeFileSync(path.join(TMP, ".codex", "auth.json"), JSON.stringify({ tokens: { access_token: "a", refresh_token: "r" } }));
+  bridgeSignOut("openai");
+  await bridgeSignIn("openai");
+  expect(store().openai).toEqual({ source: "codex-cli" });
+});

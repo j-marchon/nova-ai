@@ -184,7 +184,7 @@ export function syncSettings(mine = {}, theirs = {}, how = "merge") {
    or replaced), settings, appearance (but its UI size) and name. */
 export function applySync(local, remote, how = "merge") {
   const library = how === "merge" ? mergeLibrary(local, remote).patch : replaceLibrary(remote);
-  const appearance = remote.appearance ? { ...local.appearance, ...remote.appearance, uiScale: local.appearance?.uiScale, skinInChat: local.appearance?.skinInChat } : local.appearance;
+  const appearance = remote.appearance ? { ...local.appearance, ...remote.appearance, uiScale: local.appearance?.uiScale, bubbleScale: local.appearance?.bubbleScale, skinInChat: local.appearance?.skinInChat } : local.appearance;
   return {
     ...library,
     settings: syncSettings(local.settings, remote.settings, how),

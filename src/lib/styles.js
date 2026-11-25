@@ -84,6 +84,13 @@ export const ADVANCED_TUNING = [
   { key: "dynatemp_min", label: "Dynamic Temp Min", min: 0, max: 2, step: 0.01, hint: "0 = off" },
   { key: "dynatemp_max", label: "Dynamic Temp Max", min: 0, max: 2, step: 0.01, hint: "0 = off" },
   { key: "dynatemp_exponent", label: "Dynamic Temp Exponent", min: 0.1, max: 5, step: 0.1 },
+  { key: "xtc_threshold", label: "XTC threshold", min: 0, max: 0.5, step: 0.01 },
+  { key: "xtc_probability", label: "XTC probability", min: 0, max: 1, step: 0.01, hint: "0 = off" },
+  { key: "typical_p", label: "Typical P", min: 0, max: 1, step: 0.01, hint: "1 = off" },
+  { key: "tfs", label: "Tail free sampling", min: 0, max: 1, step: 0.01, hint: "1 = off" },
+  { key: "smoothing_factor", label: "Smoothing factor", min: 0, max: 10, step: 0.01, hint: "0 = off" },
+  { key: "smoothing_curve", label: "Smoothing curve", min: 1, max: 10, step: 0.01 },
+  { key: "nsigma", label: "Top n sigma", min: 0, max: 5, step: 0.01, hint: "0 = off" },
 ];
 
 export const DEFAULT_ADVANCED_SAMPLERS = {
@@ -99,7 +106,17 @@ export const DEFAULT_ADVANCED_SAMPLERS = {
   dynatemp_min: 0,
   dynatemp_max: 0,
   dynatemp_exponent: 1.0,
+  xtc_threshold: 0.1,
+  xtc_probability: 0,
+  typical_p: 1,
+  tfs: 1,
+  smoothing_factor: 0,
+  smoothing_curve: 1,
+  nsigma: 0,
 };
+
+/* the samplers above that are read and bounded the same plain way */
+const PLAIN_SAMPLERS = ["xtc_threshold", "xtc_probability", "typical_p", "tfs", "smoothing_factor", "smoothing_curve", "nsigma"];
 
 export function normalizeAdvancedSamplers(src = {}) {
   const num = (v, min, max, def) => {
@@ -140,6 +157,10 @@ export function normalizeAdvancedSamplers(src = {}) {
     dynatemp_min,
     dynatemp_max,
     dynatemp_exponent,
+    ...Object.fromEntries(PLAIN_SAMPLERS.map((k) => {
+      const f = ADVANCED_TUNING.find((x) => x.key === k);
+      return [k, num(src[k], f.min, f.max, DEFAULT_ADVANCED_SAMPLERS[k])];
+    })),
   };
 }
 
@@ -280,6 +301,8 @@ const SAMPLER_NAMES = {
   dynatemp_min: ["dynatemp_min", "dynatempMin", "dynamic_temperature_min", "dynamicTempMin"],
   dynatemp_max: ["dynatemp_max", "dynatempMax", "dynamic_temperature_max", "dynamicTempMax"],
   dynatemp_exponent: ["dynatemp_exponent", "dynatempExponent", "dynamic_temperature_exponent", "dynamicTempExponent"],
+  typical_p: ["typical_p", "typical"],
+  nsigma: ["nsigma", "top_n_sigma", "top_nsigma"],
 };
 const SAMPLER_BLOCKS = ["sampler", "samplers", "settings", "generation_settings", "gen_settings", "generation_config", "generationConfig", "parameters", "params"];
 

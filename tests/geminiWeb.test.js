@@ -296,6 +296,23 @@ describe("Gemini app in Nova Bridge", () => {
     bridgeSetBrowserSignIn(null);
   });
 
+  it("opens the sign-in window when the browser's saved sign-in has ended", async () => {
+    const calls = [];
+    g.page = { status: 302, headers: { location: "https://accounts.google.com/x" }, body: "" };
+    bridgeSetBrowserSignIn(({ skipSaved }) => {
+      calls.push(skipSaved);
+      if (!skipSaved) return { cookies: { "__Secure-1PSID": "ended" }, authuser: 0, saved: true };
+      g.page = { status: 200, headers: {}, body: PAGE };
+      return { cookies: { "__Secure-1PSID": "fresh" }, authuser: 0 };
+    });
+    await post("/auth/gemini-web/start", {});
+    await new Promise((r) => setTimeout(r, 30));
+    await vi.waitFor(() => expect(bridgeInfo().subscriptions.find((p) => p.id === "gemini-web").connected).toBe(true));
+    expect(calls).toEqual([false, true]);
+    expect(bridgeInfo().subscriptions.find((p) => p.id === "gemini-web").connected).toBe(true);
+    bridgeSetBrowserSignIn(null);
+  });
+
   it("signs in with pasted cookies and never shows them", async () => {
     const r = await post("/auth/gemini-web/token", { token: "__Secure-1PSID=secret-psid-value; __Secure-1PSIDTS=secret-psidts-value" });
     expect(r.status).toBe(200);
@@ -306,12 +323,11 @@ describe("Gemini app in Nova Bridge", () => {
     expect(fs.statSync(process.env.NOVA_BRIDGE_AUTH_FILE).mode & 0o077).toBe(0);
   });
 
-  it("lists exactly the models the app's picker offers, then the default", async () => {
+  it("lists exactly the models the app's picker offers this plan, and nothing else", async () => {
     const d = await (await fetch(`${base}/v1/models`, { headers: AUTH })).json();
     const rows = d.data.filter((m) => m.id.startsWith("gemini-web/"));
-    expect(rows.map((m) => m.id).sort()).toEqual(["auto", "4-hydrogen-low", "4-hydrogen-medium", "4-hydrogen-high", "4-neon-low", "4-neon-medium", "4-neon-high", "4-carbon", "default"].map((x) => `gemini-web/${x}`).sort());
-    expect(rows.find((m) => m.id === "gemini-web/4-carbon").name).toBe("4 Carbon, not on this plan (Gemini app)");
-    expect(rows.find((m) => m.id === "gemini-web/default")).toMatchObject({ name: "Gemini app default (Gemini app)", pricing: { prompt: "0", completion: "0" } });
+    expect(rows.map((m) => m.id).sort()).toEqual(["auto", "4-hydrogen-low", "4-hydrogen-medium", "4-hydrogen-high", "4-neon-low", "4-neon-medium", "4-neon-high"].map((x) => `gemini-web/${x}`).sort());
+    expect(rows.find((m) => m.id === "gemini-web/4-neon-high")).toMatchObject({ pricing: { prompt: "0", completion: "0" } });
   });
 
   it("streams a reply, framing the system prompt in text and naming the model by header", async () => {
@@ -393,15 +409,19 @@ describe("Gemini app in Nova Bridge", () => {
     });
     const listed = async () => (await (await fetch(`${base}/v1/models`, { headers: AUTH })).json()).data.map((m) => m.id).filter((id) => id.startsWith("gemini-web/")).sort();
 
-    it("lists the learned models instead, never built-in ones", async () => {
+    it("lists nothing rather than guess, while learned models still answer", async () => {
       await post("/auth/gemini-web/models", { slug: "hydrogen-4", name: "Hydrogen 4", header: "56fdd199312815e2" });
-      expect(await listed()).toEqual(["gemini-web/default", "gemini-web/gemini-4-argon", "gemini-web/hydrogen-4"]);
+      expect(await listed()).toEqual([]);
+      g.stream = () => ({ status: 200, headers: {}, body: wire(snap("Hi", "")) });
+      expect((await chat({ model: "gemini-web/hydrogen-4", messages })).status).toBe(200);
     });
 
     it("stops offering a learned model Google refuses, until it is learned again", async () => {
       g.stream = () => ({ status: 200, headers: {}, body: wire(errorFrame(1052)) });
       expect((await chat({ model: "gemini-web/hydrogen-4", messages })).status).toBe(404);
-      expect(await listed()).toEqual(["gemini-web/default", "gemini-web/gemini-4-argon"]);
+      /* refused now without asking Google again */
+      g.stream = () => ({ status: 200, headers: {}, body: wire(snap("Hi", "")) });
+      expect((await (await chat({ model: "gemini-web/hydrogen-4", messages })).json()).error.message).toMatch(/stopped accepting/);
       g.stream = () => ({ status: 200, headers: {}, body: wire(snap("Back", ""))});
       const learned = await post("/auth/gemini-web/models", { slug: "hydrogen-4", name: "Hydrogen 4", header: "feedfacefeedface" });
       expect(learned.status).toBe(200);
@@ -415,21 +435,20 @@ describe("Gemini app in Nova Bridge", () => {
       expect((await post("/auth/gemini-web/models", { slug: "x y", header: "feedfacefeedface" })).status).toBe(400);
       expect((await post("/auth/gemini-web/models", { slug: "gemini-4-flash", header: "not a header" })).status).toBe(400);
       expect((await post("/auth/gemini-web/models", { slug: "default", header: "feedfacefeedface" })).status).toBe(400);
-      const ok = await (await post("/auth/gemini-web/models", { slug: "gemini-4-flash", name: "Gemini 4 Flash", header: "0123456789abcdef" })).json();
-      expect(ok.models.map((m) => m.id)).toContain("gemini-web/gemini-4-flash");
-      const gone = await (await post("/auth/gemini-web/models", { remove: "gemini-4-flash" })).json();
-      expect(gone.models.map((m) => m.id)).not.toContain("gemini-web/gemini-4-flash");
+      expect((await post("/auth/gemini-web/models", { slug: "gemini-4-flash", name: "Gemini 4 Flash", header: "0123456789abcdef" })).status).toBe(200);
+      expect((await chat({ model: "gemini-web/gemini-4-flash", messages })).status).toBe(200);
+      expect((await post("/auth/gemini-web/models", { remove: "gemini-4-flash" })).status).toBe(200);
       expect((await chat({ model: "gemini-web/gemini-4-flash", messages })).status).toBe(404);
     });
   });
 
   it("never hides a model the app lists, even after a refusal", async () => {
     g.stream = () => ({ status: 200, headers: {}, body: wire(errorFrame(1052)) });
-    expect((await chat({ model: "gemini-web/4-carbon", messages })).status).toBe(404);
+    expect((await chat({ model: "gemini-web/4-neon-low", messages })).status).toBe(404);
     const ids = (await (await fetch(`${base}/v1/models`, { headers: AUTH })).json()).data.map((m) => m.id);
-    expect(ids).toContain("gemini-web/4-carbon");
+    expect(ids).toContain("gemini-web/4-neon-low");
     g.stream = () => ({ status: 200, headers: {}, body: wire(snap("Hello there", "")) });
-    expect((await chat({ model: "gemini-web/4-carbon", messages })).status).toBe(200);
+    expect((await chat({ model: "gemini-web/4-neon-low", messages })).status).toBe(200);
   });
 
   it("keeps the rotated cookie in the store", async () => {

@@ -21,6 +21,12 @@ process.env.FAKE_CLAUDE_LOG = path.join(TMP, "claude.log");
 process.env.FAKE_CLAUDE_SCENARIO = path.join(TMP, "claude.json");
 process.env.NOVA_BRIDGE_ORIGINS = "http://localhost:5173,capacitor://localhost,https://localhost";
 process.env.NOVA_BRIDGE_HOME = TMP;
+/* no real Antigravity sign-in from this computer's keychain */
+process.env.NOVA_BRIDGE_AGY_CRED = "none";
+/* Claude Code's saved claude.ai sign-in, which the model list is read with */
+process.env.CLAUDE_CONFIG_DIR = path.join(TMP, ".claude");
+fs.mkdirSync(process.env.CLAUDE_CONFIG_DIR);
+fs.writeFileSync(path.join(process.env.CLAUDE_CONFIG_DIR, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "sk-ant-oat-test", expiresAt: Date.now() + 3600000 } }));
 process.env.NOVA_BRIDGE_AUTH_FILE = path.join(TMP, "auth.json");
 fs.writeFileSync(process.env.NOVA_BRIDGE_AUTH_FILE, JSON.stringify({ claude: { source: "claude-code" } }));
 const { server, originAllowed, bridgeDevice, bridgeSignOut, networkOf } = await import("../bridge/bridge.mjs");
@@ -180,10 +186,18 @@ describe("Nova Bridge server", () => {
     expect(a.status).toBe(403);
   });
 
-  it("lists Claude's models, OpenRouter-style and free", async () => {
+  it("lists the models Anthropic offers the Claude sign-in, OpenRouter-style and free", async () => {
+    const asked = [];
+    vi.stubGlobal("fetch", vi.fn(async (url, init) => {
+      if (!String(url).startsWith("https://api.anthropic.com/")) return realFetch(url, init);
+      asked.push(init.headers.Authorization);
+      return Response.json({ data: [{ id: "claude-opus-5-5", display_name: "Claude Opus 5.5" }, { id: "claude-fable-5-2", display_name: "Claude Fable 5.2", max_input_tokens: 1000000 }] });
+    }));
     const d = await (await realFetch(`${base}/v1/models`, { headers: KEY })).json();
-    expect(d.data.map((m) => m.id).sort()).toEqual(["claude/haiku", "claude/opus", "claude/sonnet"]);
-    expect(d.data.find((m) => m.id === "claude/opus")).toMatchObject({ context_length: 200000, pricing: { prompt: "0", completion: "0" } });
+    expect(d.data.map((m) => m.id).sort()).toEqual(["claude/claude-fable-5-2", "claude/claude-opus-5-5"]);
+    expect(d.data.find((m) => m.id === "claude/claude-opus-5-5")).toMatchObject({ context_length: 200000, pricing: { prompt: "0", completion: "0" } });
+    expect(d.data.find((m) => m.id === "claude/claude-fable-5-2").context_length).toBe(1000000);
+    expect(asked).toEqual(["Bearer sk-ant-oat-test"]);
   });
 
   it("streams the reply with the whole system prompt as Claude Code's own, and no tools", async () => {

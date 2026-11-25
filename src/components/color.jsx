@@ -67,7 +67,7 @@ export function ColorWheel({ initial, onPick, onClose, guard = null }) {
                  radius: with the old 70% everything past that ring looked
                  identically saturated while still reporting different values. */
               background:
-                "var(--nv-bg)",
+                "radial-gradient(circle closest-side, #fff, rgb(255 255 255 / 0) 100%), conic-gradient(from 0deg, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)",
               boxShadow: "none",
               filter: `brightness(${0.35 + v * 0.65})`,
             }}
@@ -153,19 +153,35 @@ export function ContrastGuard({ hex, light, onLift }) {
   );
 }
 
-/* simple colour palette; the chosen swatch carries a tick and its hex shows underneath */
-export function Swatches({ options, value, onChange, size = "w-8 h-8", allowCustom = true, guard = null }) {
+/* simple colour palette; the chosen swatch carries a tick and its hex shows underneath.
+   With defaultColor, a first swatch in that colour stands for "none picked" (null). */
+export function Swatches({ options, value, onChange, size = "w-8 h-8", allowCustom = true, guard = null, defaultColor = null }) {
   const [open, setOpen] = useState(false);
   const custom = allowCustom && value && value !== "accent" && !options.includes(value);
   return (
     <>
       <div className="flex flex-wrap gap-2.5">
+        {defaultColor && (
+          <button
+            type="button"
+            onClick={() => onChange(null)}
+            style={{ background: defaultColor }}
+            aria-pressed={!value}
+            data-on={!value ? "1" : undefined}
+            className={`${size} rounded-full flex items-center justify-center text-[var(--nv-ink)] ${!value ? "ring-2 ring-white ring-offset-2 ring-offset-zinc-950" : "ring-1 ring-white/25"}`}
+            aria-label="Default colour"
+            title="The skin's own colour"
+          >
+            {!value && <Check size={14} />}
+          </button>
+        )}
         {options.map((c) => {
           const bg = c === "accent" ? "var(--acc)" : c;
           const on = value === c;
           return (
             <button
               key={c}
+              type="button"
               onClick={() => onChange(c)}
               style={{ background: bg }}
               aria-pressed={on}

@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import React, { act, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { chatAppearance } from "../src/components/chatAppearance.js";
 import { applyUiScale, layoutRect, layoutViewport, normalizeUiScale, toLayout } from "../src/lib/uiScale.js";
 import { emptyData, normalizeData } from "../src/lib/data.js";
 import { AppearancePanel } from "../src/pages/SettingsPage.jsx";
@@ -14,8 +15,8 @@ describe("global UI size", () => {
   it("defaults to 100% and safely normalizes saved settings", () => {
     expect(emptyData.appearance.uiScale).toBe(1); expect(emptyData.appearance.scheme).toBe("dark");
     expect(normalizeData({ appearance: { uiScale: 1.2 } }).appearance.uiScale).toBe(1.2);
-    expect(normalizeData({ appearance: { uiScale: 0 } }).appearance.uiScale).toBe(.85);
-    expect(normalizeData({ appearance: { uiScale: 3 } }).appearance.uiScale).toBe(1.25);
+    expect(normalizeData({ appearance: { uiScale: 0 } }).appearance.uiScale).toBe(.7);
+    expect(normalizeData({ appearance: { uiScale: 3 } }).appearance.uiScale).toBe(1.3);
     expect(normalizeData({ appearance: { uiScale: "bad" } }).appearance.uiScale).toBe(1);
     expect(normalizeUiScale(NaN)).toBe(1);
     expect(normalizeData({ appearance: { scheme: "light" } }).appearance.scheme).toBe("light");
@@ -35,11 +36,31 @@ describe("global UI size", () => {
       return <AppearancePanel ap={appearance} onChange={patch => setAppearance(previous => ({ ...previous, ...patch }))} />;
     }
     await act(async () => root.render(<Settings />));
-    const input = [...host.querySelectorAll('input[type="range"]')].find(el => el.min === "0.85");
+    const input = [...host.querySelectorAll('input[type="range"]')].find(el => el.min === "0.7");
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
     await act(async () => { setter.call(input, "1.2"); input.dispatchEvent(new Event("input", { bubbles: true })); });
     expect(current.uiScale).toBe(1.2); expect(current.scheme).toBe("dark");
     await act(async () => [...host.querySelectorAll("button")].find(el => el.textContent === "Reset size").click());
     expect(current.uiScale).toBe(1);
+  });
+});
+describe("desktop UI size and chat bubbles", () => {
+  it("counts 100% from the desktop base and keeps an older pick as it looked", async () => {
+    window.novaDesktop = {}; vi.resetModules();
+    try {
+      const scale = await import("../src/lib/uiScale.js");
+      const { normalizeData } = await import("../src/lib/data.js");
+      expect(scale.applyUiScale(1)).toBe(1.25);
+      expect(normalizeData({ appearance: { uiScale: 1.25 } }).appearance.uiScale).toBe(1);
+      expect(normalizeData({ appearance: { uiScale: 1 } }).appearance.uiScale).toBe(1);
+      expect(normalizeData({ appearance: { uiScale: 1.1, uiSizeRebased: true } }).appearance.uiScale).toBe(1.1);
+      expect(normalizeData({ appearance: { bubbleScale: 9 } }).appearance.bubbleScale).toBe(1.5);
+    } finally { delete window.novaDesktop; vi.resetModules(); }
+  });
+  it("bubbles wear the skin's colours until one is picked", () => {
+    expect(chatAppearance({ bubbleAlpha: 1 }).userBubbleBg).toBe("var(--nv-bubble-user)");
+    const look = chatAppearance({ bubbleAlpha: 1, userColor: "#e4e4e7", aiColor: "red;x" });
+    expect(look.userBubbleBg).toBe("#e4e4e7"); expect(look.userBubbleFg).toBe("#09090b");
+    expect(look.aiBubbleBg).toBe("var(--nv-bubble-ai)"); expect(look.aiBubbleFg).toBe("var(--nv-ink)");
   });
 });

@@ -5,8 +5,10 @@ import { ChevronRight, Plus, Upload } from "lucide-react";
 import { clamp } from "./theme.jsx";
 import { AccBtn, Button, Field, PickRow, TextArea, TextInput, Toggle } from "./ui.jsx";
 import { activeModel, endpointFor, sentSampler } from "../lib/api.js";
-import { DEFAULT_STYLE, STYLE_PRESETS, outputLimit, STYLE_TUNING, activeCustomStyle, activePreset, customStyleList, parseStyleImport, samplerPreset, savedTuning, styleDefaults, stylePrompt, styleTuning, thinkingOn, withThinking, withTuning } from "../lib/styles.js";
+import { ADVANCED_TUNING, DEFAULT_ADVANCED_SAMPLERS, DEFAULT_STYLE, STYLE_PRESETS, outputLimit, STYLE_TUNING, activeCustomStyle, activePreset, customStyleList, parseStyleImport, samplerPreset, savedTuning, styleDefaults, stylePrompt, styleTuning, thinkingOn, withThinking, withTuning } from "../lib/styles.js";
 import { estimateTokens, formatTokens, styleTokens } from "../lib/tokens.js";
+import { mergeRegex, regexFile } from "../lib/tavern.js";
+import { RegexList } from "./forms.jsx";
 
 /* counted once per saved prompt: the list redraws while a slider moves */
 const SIZES = new WeakMap();
@@ -84,7 +86,18 @@ export function AdvancedSamplersSection({ values = {}, onChange, disabled = fals
   const dynatemp_max = values.dynatemp_max ?? 0;
   const dynatemp_exponent = values.dynatemp_exponent ?? 1.0;
 
+  const v = (k) => values[k] ?? DEFAULT_ADVANCED_SAMPLERS[k];
+  const group = (title, keys) => (
+    <div className="space-y-2 pt-1 border-t border-[var(--nv-edge-ink)]">
+      <div className="text-[11px] font-medium tracking-wide text-zinc-400 uppercase">{title}</div>
+      {keys.map((k) => (
+        <TuneRow key={k} field={ADVANCED_TUNING.find((f) => f.key === k)} value={v(k)} onChange={(x) => onChange({ [k]: x })} />
+      ))}
+    </div>
+  );
+
   const isActive =
+    v("xtc_probability") > 0 || v("typical_p") < 1 || v("tfs") < 1 || v("smoothing_factor") > 0 || v("nsigma") > 0 ||
     dry_multiplier > 0 ||
     top_a > 0 ||
     mirostat_mode > 0 ||
@@ -213,6 +226,10 @@ export function AdvancedSamplersSection({ values = {}, onChange, disabled = fals
                 onChange={(v) => onChange({ dynatemp_exponent: v })}
               />
             </div>
+            {group("XTC", ["xtc_probability", "xtc_threshold"])}
+            {group("Typical P and tail free", ["typical_p", "tfs"])}
+            {group("Smoothing", ["smoothing_factor", "smoothing_curve"])}
+            {group("Top n sigma", ["nsigma"])}
           </div>
         </div>
       </Disclosure>
@@ -418,11 +435,13 @@ function draftExtras(d) {
     n("inject") ? `${n("inject")} in-chat block${n("inject") > 1 ? "s" : ""} · inserted by depth` : "",
     d.modes?.impersonate ? "Impersonate prompt · when writing your message" : "",
     d.modes?.continue ? "Continue blocks · when continuing a reply" : "",
-    n("regex") ? `${n("regex")} prompt regex${n("regex") > 1 ? "es" : ""} · applied to what is sent` : "",
-    n("display") ? `${n("display")} display regex${n("display") > 1 ? "es" : ""} · applied to bubbles, HTML kept` : "",
-    n("saved") ? `${n("saved")} saved-message regex${n("saved") > 1 ? "es" : ""} · applied to replies as saved` : "",
   ].filter(Boolean);
 }
+
+/* the draft's three regex lists as one, for RegexList */
+const REGEX_KINDS = { regex: "sent", display: "shown", saved: "saved" };
+const regexItems = (d) => Object.keys(REGEX_KINDS).flatMap((k) =>
+  (Array.isArray(d[k]) ? d[k] : []).map((r, i) => ({ k, i, name: r.name, kind: REGEX_KINDS[k], off: !!r.disabled })));
 
 /* The settings an editor draft carries, as one line, or "" */
 function draftSettings(d) {
@@ -512,6 +531,15 @@ export function CustomStyles({ settings, onChange }) {
   const loadFile = async (file) => {
     try {
       const raw = await file.text();
+      /* a preset's regex file: its scripts join the open prompt, or the selected one */
+      const scripts = regexFile(raw);
+      if (scripts) {
+        const withScripts = (s) => ({ ...s, regex: mergeRegex(s.regex, scripts.regex), display: mergeRegex(s.display, scripts.display), saved: mergeRegex(s.saved, scripts.saved) });
+        if (draft) { setErr(""); setDraft(withScripts); }
+        else if (selected) commit([withScripts(selected)]);
+        else throw new Error("Import the preset first, then load its regex file into it.");
+        return;
+      }
       const base = file.name.replace(/\.[^.]+$/, "") || "Imported prompt";
       const parsed = parseStyleImport(raw, base, { allowEmpty: !!draft?.text?.trim() });
       if (parsed.length > 1 && !draft?.id) {
@@ -581,6 +609,11 @@ export function CustomStyles({ settings, onChange }) {
           </ul>
         </div>
       )}
+      <RegexList
+        items={regexItems(draft)}
+        onToggle={(x) => setDraft((d) => ({ ...d, [x.k]: d[x.k].map((r, j) => (j === x.i ? { ...r, disabled: !r.disabled } : r)) }))}
+        onRemove={(x) => setDraft((d) => ({ ...d, [x.k]: d[x.k].filter((_, j) => j !== x.i) }))}
+      />
       {draftSettings(draft) && (
         <p className="text-[11px] text-zinc-500 leading-snug">Generation settings: {draftSettings(draft)}</p>
       )}

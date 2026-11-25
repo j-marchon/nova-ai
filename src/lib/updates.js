@@ -7,7 +7,7 @@
    is sent. */
 
 /* the public repository Nova's releases are published in */
-export const RELEASES_REPO = "j-marchon/nova-releases";
+export const RELEASES_REPO = "j-marchon/nova-ai";
 export const RELEASES_PAGE = `https://github.com/${RELEASES_REPO}/releases/latest`;
 const API = `https://api.github.com/repos/${RELEASES_REPO}/releases/latest`;
 const KEY = "nova-update-check";
@@ -45,7 +45,9 @@ export async function checkForUpdate(current, { fetchImpl = fetch, now = Date.no
   const latest = String(body?.tag_name || "");
   if (!parseVersion(latest)) throw new Error("GitHub's answer had no version in it.");
   const url = /^https:\/\/github\.com\//.test(body?.html_url || "") ? body.html_url : RELEASES_PAGE;
-  const result = { latest: shortVersion(latest), url, newer: isNewer(latest, current), at: now };
+  /* the Android app downloads this one itself (NovaUpdatePlugin) */
+  const apk = (body?.assets || []).map((a) => a?.browser_download_url).find((u) => typeof u === "string" && u.startsWith(`https://github.com/${RELEASES_REPO}/releases/download/`) && u.endsWith(".apk")) || null;
+  const result = { latest: shortVersion(latest), url, apk, newer: isNewer(latest, current), at: now };
   save(result);
   return result;
 }
@@ -62,4 +64,29 @@ export async function bootUpdateCheck(enabled, current, opts = {}) {
     const saved = readSaved();
     return saved ? { ...saved, newer: isNewer(saved.latest, current) } : null;
   }
+}
+
+/* Update, in "A new update is available" (UpdateDialog). The desktop app
+   downloads, installs and restarts (desktop/main.cjs); the Android app
+   downloads the APK and opens Android's installer (NovaUpdatePlugin);
+   anything else, and the portable .exe, opens the release to download.
+   Resolves to a line for the dialog, or nothing while Nova restarts. */
+export async function installUpdate(notice, onProgress) {
+  const page = () => { window.open(notice?.url || RELEASES_PAGE, "_blank", "noopener,noreferrer"); return "The download page is open in your browser."; };
+  const desktop = window.novaDesktop;
+  if (desktop?.update) {
+    const done = await desktop.update(onProgress);
+    if (done?.manual) return page();
+    if (done?.latest) return "This is already the newest Nova.";
+    return undefined;
+  }
+  const android = window.Capacitor?.isNativePlatform?.() && window.Capacitor.Plugins?.NovaUpdate;
+  if (android && notice?.apk) {
+    const listener = await android.addListener("progress", (e) => onProgress?.(e.percent));
+    try {
+      const done = await android.install({ url: notice.apk });
+      return done?.permission ? "Allow Nova to install apps, then tap Update again." : "Tap Install to finish.";
+    } finally { listener.remove(); }
+  }
+  return page();
 }

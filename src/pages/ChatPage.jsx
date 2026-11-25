@@ -4,7 +4,7 @@ import { toLayout } from "../lib/uiScale.js";
 import { chatAppearance } from "../components/chatAppearance.js";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { BookMarked, Brain, PanelLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, Download, FastForward, Gauge, GitBranch, Globe, Image as ImageIcon, Languages, ListX, MoreVertical, Palette, Pencil, Play, Plus, RefreshCw, Reply, Send, Settings as Cog, Smartphone, SlidersHorizontal, Square, StickyNote, Trash2, User, Volume2, VolumeX, Wand2, X, Zap } from "lucide-react";
+import { BookMarked, Brain, PanelLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, Download, Eye, EyeOff, FastForward, Gauge, GitBranch, Globe, Image as ImageIcon, Languages, ListX, MoreVertical, Palette, Pencil, Play, Plus, RefreshCw, Reply, Send, Settings as Cog, Smartphone, SlidersHorizontal, Square, StickyNote, Trash2, User, Volume2, VolumeX, Wand2, X, Zap } from "lucide-react";
 import { BookmarksModal } from "../components/BookmarksModal.jsx";
 import { ImageGenModal } from "../components/ImageGenModal.jsx";
 import { QuickRepliesStrip, QuickRepliesManager, SendAsModal } from "../components/QuickReplies.jsx";
@@ -29,6 +29,7 @@ import { breakdownTokens, formatTokens } from "../lib/tokens.js";
 import { translateText } from "../lib/translate.js";
 import { canSpeak, speak, speechOptions, speechProblem, stopSpeech } from "../lib/tts.js";
 import { activePreset, genParams, styleLabel, thinkingOn, withThinking } from "../lib/styles.js";
+import { applyRegex, chatRegex } from "../lib/tavern.js";
 import { DEFAULT_LORE_BUDGET, DEFAULT_SCAN_DEPTH, chatBooks, entryLabel, selectLore } from "../lib/lore.js";
 import { castMember, ensembleOf, ensembleTitle, leadNames, linkedCards, replySpeakers, scopeCandidates, scopeOf } from "../lib/scope.js";
 import { ScopeSheet, ScopeStrip } from "../components/Scope.jsx";
@@ -193,10 +194,10 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit, 
   /* the active prompt's display regex (html.js); empty for every prompt
      but an imported SillyTavern preset that has some */
   const display = useMemo(() => {
-    const rules = genParams(data.settings).display || [];
-    /* patterns that name {{user}} or {{char}} are filled from this chat */
-    return rules.some((r) => r.sub) ? Object.assign([...rules], { ctx: { user: userName, char: character?.name || universe?.name } }) : rules;
-  }, [data.settings, userName, character?.name, universe?.name]);
+    const rules = chatRegex(genParams(data.settings), character, "display");
+    /* patterns and replacements that name {{user}} or {{char}} are filled from this chat */
+    return rules.some((r) => r.sub || [r.replace, ...(r.trim || [])].join("").includes("{{")) ? Object.assign([...rules], { ctx: { user: userName, char: character?.name || universe?.name } }) : rules;
+  }, [data.settings, userName, character?.name, character?.regexScripts, universe?.name]);
   const scopeSettings = scopeActive && !(data.settings.sceneEvery > 0) ? { ...data.settings, sceneEvery: 2 } : data.settings;
   const [thinkOpen, setThinkOpen] = useState(false);
   const error = chat.lastError;
@@ -256,6 +257,7 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit, 
   const [conflictAsked, setConflictAsked] = useState(null); // style id the overlap sheet was closed for
   const [showModelPick, setShowModelPick] = useState(false);
   const [showGreetings, setShowGreetings] = useState(false); // opening scenario sheet
+  const [versionsId, setVersionsId] = useState(null); // reply whose versions sheet is open
   const [showBookmarks, setShowBookmarks] = useState(false);
   const [bookmarkTarget, setBookmarkTarget] = useState(null);
   const [highlightMsgId, setHighlightMsgId] = useState(null);
@@ -278,6 +280,7 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit, 
       lorebooks: books,
       authorsNote: chat.authorsNote,
       vars: chat.vars,
+      loreTimed: chat.loreTimed,
       memory: chat.memory,
       scene: chat.scene,
       world: isUni ? phoneWorldLog(chat) : undefined,
@@ -286,7 +289,7 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit, 
       settings: data.settings,
       maxTokens: tokenMax,
     });
-  }, [chatSettings, character, universe, isUni, ensemble, persona, userName, books, chat.authorsNote, chat.vars, chat.memory, chat.scene, chat.world, chat.handset, chat.messages, data.settings, tokenMax]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [chatSettings, character, universe, isUni, ensemble, persona, userName, books, chat.authorsNote, chat.vars, chat.loreTimed, chat.memory, chat.scene, chat.world, chat.handset, chat.messages, data.settings, tokenMax]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleTranslate = useCallback(async (msg) => {
     const targetLang = data.settings?.translateTargetLang || "en";
@@ -744,7 +747,9 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit, 
     const isSystem = currentSendAs.type === "system";
     const isChar = currentSendAs.type === "character" || currentSendAs.type === "cast";
 
-    const evaluated = text ? runMacros(text, { vars: chatRef.current.vars || {}, user: userName, char: charLabel }) : "";
+    const macroed = text ? runMacros(text, { vars: chatRef.current.vars || {}, user: userName, char: charLabel }) : "";
+    /* a preset's scripts that rewrite your message as it is saved (tavern.js), as SillyTavern runs them on send */
+    const evaluated = !isSystem && !isChar ? applyRegex(macroed, chatRegex(genParams(data.settings), character, "saved"), "user", 0, { user: userName, char: charLabel }) : macroed;
 
     const newMsg = {
       id: uid(),
@@ -916,6 +921,19 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit, 
     if (k < swipeList(msg).length - 1) showVersion(msg, k + 1);
     else doRegenerate(msg);
   };
+  const versionsMsg = versionsId ? chat.messages.find((m) => m.id === versionsId) : null;
+
+  /* Hidden from the AI: kept and shown (dimmed), never sent, summarised or
+     scanned for lore (prompt.js, memory.js, lore.js). */
+  const toggleHidden = (msg) => patchChatWith((c) => ({
+    ...c,
+    updatedAt: Date.now(),
+    messages: c.messages.map((m) => {
+      if (m.id !== msg.id) return m;
+      const { hidden, ...rest } = m;
+      return hidden ? rest : { ...m, hidden: true };
+    }),
+  }));
 
   /* ---------- editing in place ----------
 
@@ -1073,6 +1091,7 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit, 
       label: translations[msg.id] ? "Hide translation" : "Translate",
       run: () => toggleTranslate(msg),
     });
+    acts.push({ icon: msg.hidden ? Eye : EyeOff, label: msg.hidden ? "Show to AI" : "Hide from AI", run: () => toggleHidden(msg) });
     acts.push({
       icon: BookMarked, label: "Bookmark",
       sub: "a checkpoint to jump back to or branch from",
@@ -1299,6 +1318,7 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit, 
     showGreetings: () => setShowGreetings(true),
     swipeBack,
     swipeForward,
+    showVersions: (m) => setVersionsId(m.id),
     regenerate: (m) => withForkWarning(m, "Regenerate", () => doRegenerate(m)),
     regenNote: (m) => setRegenMsg({ msg: m, text: "" }),
     continueMsg: (m) => continueMessage(m),
@@ -1605,6 +1625,34 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit, 
         </Modal>
       )}
 
+      {/* Every version of a reply, from its counter: read, then jump. */}
+      {versionsMsg && (
+        <Modal title="Versions" onClose={() => setVersionsId(null)}>
+          <div className="space-y-2" data-testid="versions-sheet">
+            {swipeList(versionsMsg).map((v, i) => {
+              const on = i === swipeIndex(versionsMsg);
+              return (
+                <button
+                  key={i}
+                  onClick={() => { showVersion(versionsMsg, i); setVersionsId(null); }}
+                  style={on ? selStyle(true) : {}}
+                  aria-current={on ? "true" : undefined}
+                  className={`w-full text-left px-3.5 py-3 rounded-xl border  ${
+                    on ? "" : "border-zinc-800 bg-[var(--nv-control)] hover:border-zinc-700"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <p className="nv-label flex-1 min-w-0 truncate" style={{ fontSize: 9.5 }}>{i + 1}{v.via ? ` · via ${short(v.via)}` : ""}</p>
+                    {on && <Check size={15} style={{ color: "var(--acc)" }} className="shrink-0" />}
+                  </div>
+                  <p className="text-[13px] text-zinc-300 mt-1 leading-snug line-clamp-3 whitespace-pre-wrap break-words">{hideNotes(v.text || "").trim()}</p>
+                </button>
+              );
+            })}
+          </div>
+        </Modal>
+      )}
+
       {showScope && (
         <ScopeSheet
           scope={sc}
@@ -1780,6 +1828,8 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit, 
             <ThemeSection
               theme={isUni ? universe?.theme : character?.theme}
               onChange={saveTheme}
+              bubbleScale={data.appearance?.bubbleScale}
+              onBubbleScale={(bubbleScale) => update((d) => ({ ...d, appearance: { ...d.appearance, bubbleScale } }))}
             />
           ) : chatSettings === "memory" ? (
             <MemoryPanel
@@ -2066,7 +2116,7 @@ function LoreSection({ chat, settings, books, allBooks, onToggleBook }) {
   const attached = new Set(chat.lorebookIds || []);
   const embedded = books.filter((b) => !allBooks.some((x) => x.id === b.id));
   const lore = on
-    ? selectLore(books, chat.messages, { depth: settings.loreDepth || DEFAULT_SCAN_DEPTH, budget: settings.loreBudget || DEFAULT_LORE_BUDGET })
+    ? selectLore(books, chat.messages, { depth: settings.loreDepth || DEFAULT_SCAN_DEPTH, budget: settings.loreBudget || DEFAULT_LORE_BUDGET, recursion: settings.loreRecursion, timed: chat.loreTimed })
     : { constant: [], triggered: [] };
   const active = [...lore.constant, ...lore.triggered];
 

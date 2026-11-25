@@ -47,4 +47,5 @@ jobs:
           grep -v -- '-setup.exe' sums/SHA256SUMS > sums/new || true
           (cd releases/desktop && sha256sum "$(basename "$setup")") | sed 's/ \*/  /' >> sums/new
           mv sums/new sums/SHA256SUMS
-          gh release upload "$TAG" "$setup" sums/SHA256SUMS --clobber
+          # latest.yml and the blockmap describe this installer, for Update in the app
+          gh release upload "$TAG" "$setup" "$setup.blockmap" releases/desktop/latest.yml sums/SHA256SUMS --clobber

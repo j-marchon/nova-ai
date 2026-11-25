@@ -1,5 +1,6 @@
 import { useStage } from "../components/motion/hooks.js";
 import { normalizeUiScale, UI_SCALE_MIN, UI_SCALE_MAX } from "../lib/uiScale.js";
+import { BubbleSizeSlider } from "../components/theme.jsx";
 import { version } from "../../package.json";
 import { shortVersion } from "../lib/updates.js";
 import { useEffect, useRef, useState } from "react";
@@ -273,8 +274,9 @@ export function AppearancePanel({ ap, onChange }) {
         <Slider label="UI size" value={normalizeUiScale(ap.uiScale)} min={UI_SCALE_MIN} max={UI_SCALE_MAX} step={0.05}
           onChange={value => onChange({ uiScale: normalizeUiScale(value) })}
           fmt={value => `${Math.round(value * 100)}%`} />
+        <BubbleSizeSlider value={ap.bubbleScale} onChange={bubbleScale => onChange({ bubbleScale })} />
         <div className="flex justify-end">
-          <Button type="button" size="sm" className="shrink-0" onClick={() => onChange({ uiScale: 1 })}>Reset size</Button>
+          <Button type="button" size="sm" className="shrink-0" onClick={() => onChange({ uiScale: 1, bubbleScale: 1 })}>Reset size</Button>
         </div>
       </Block>
 
@@ -466,6 +468,24 @@ export function SettingsPage({ data, update }) {
                           className={`px-1 text-xs ${on ? "" : "text-zinc-400 hover:text-zinc-200"}`}
                         >
                           last {v}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm text-zinc-100">Recursive scan</p>
+                  <div className="grid grid-cols-4 gap-1.5 mt-2">
+                    {[{ v: 0, l: "Off" }, { v: 1, l: "1 step" }, { v: 3, l: "3 steps" }, { v: 99, l: "No limit" }].map(({ v, l }) => {
+                      const on = (s.loreRecursion || 0) === v;
+                      return (
+                        <Button
+                          key={v}
+                          selected={on}
+                          onClick={() => setS({ loreRecursion: v })}
+                          className={`px-1 text-xs ${on ? "" : "text-zinc-400 hover:text-zinc-200"}`}
+                        >
+                          {l}
                         </Button>
                       );
                     })}

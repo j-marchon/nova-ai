@@ -99,9 +99,11 @@ export function sceneDue(history, scene, every) {
 
 /* ---------- the side requests ---------- */
 
-/* "Name: text" lines, the way a transcript reads. */
+/* "Name: text" lines, the way a transcript reads. A message hidden from the
+   AI is left out of every note written from it. */
 export function transcript(messages, { userName, charName }) {
   return messages
+    .filter((m) => !m.hidden)
     .map((m) => `${m.role === "user" ? userName : m.speaker || charName}: ${String(m.content || "").trim()}`)
     .join("\n\n");
 }

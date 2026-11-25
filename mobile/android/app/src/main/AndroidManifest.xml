@@ -93,6 +93,8 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Update: opens Android's installer on the downloaded release (NovaUpdatePlugin) -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Saving backups and exports to Documents/Nova. Only needed up to
          Android 10; newer versions let an app write its own files there. -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="29" />

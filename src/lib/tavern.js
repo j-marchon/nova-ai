@@ -144,12 +144,16 @@ export function readTavernPreset(o) {
    compiles. */
 const subbed = (find) => String(find || "").replace(/\{\{[^{}]*\}\}/g, "x");
 
-/* "/pattern/flags" → RegExp, or null when it does not compile. */
+/* "/pattern/flags" → RegExp, or null when it does not compile. Read the
+   way SillyTavern's regexFromString reads it, so a script does here what it
+   does there: a pattern without slashes has no flags (it replaces the first
+   match only), and unknown flags make the whole string the pattern. */
 export function regexFrom(s) {
   const src = String(s || "");
-  const m = src.match(/^\/([\s\S]+)\/([a-z]*)$/i);
   try {
-    return m ? new RegExp(m[1], m[2]) : src ? new RegExp(src, "g") : null;
+    const m = src.match(/(\/?)(.+)\1([a-z]*)/i);
+    if (m[3] && !/^(?!.*?(.).*?\1)[gmixXsuUAJ]+$/.test(m[3])) return new RegExp(src);
+    return new RegExp(m[2], m[3]);
   } catch {
     return null;
   }
@@ -164,8 +168,9 @@ const regexOf = (s) => {
   return compiled.get(s);
 };
 
-/* ST placement codes: 1 your input, 2 the AI's output. */
-const PLACE_ROLES = { 1: "user", 2: "assistant" };
+/* ST placement codes: 1 your input, 2 the AI's output, 6 the AI's thinking
+   (kept on a reply, never sent: display and saved scripts reach it). */
+const PLACE_ROLES = { 1: "user", 2: "assistant", 6: "reasoning" };
 
 /* kind: "prompt" (prompt-only scripts) or "display" (display-only) */
 const KIND = {
@@ -193,6 +198,41 @@ export function tavernRegex(scripts, kind = "prompt") {
     .filter((x) => x.roles.length);
 }
 
+/* A regex file exported from SillyTavern (one script or a list of them),
+   which presets often ship beside the preset itself, as the three kinds
+   above; null when the text is not one. */
+export function regexFile(raw) {
+  let json;
+  try { json = JSON.parse(String(raw || "").replace(/^\uFEFF/, "")); } catch { return null; }
+  const items = Array.isArray(json) ? json : [json];
+  if (!items.length || !items.every((x) => x && typeof x === "object" && typeof x.findRegex === "string")) return null;
+  return { regex: tavernRegex(items), display: tavernRegex(items, "display"), saved: tavernRegex(items, "saved") };
+}
+
+/* A card's character's note (SillyTavern's depth_prompt), or null when
+   empty. SillyTavern's defaults: depth 4, system. */
+export function depthPromptOf(n) {
+  if (!n || typeof n !== "object" || typeof n.prompt !== "string" || !n.prompt.trim()) return null;
+  const depth = Number(n.depth);
+  return {
+    prompt: n.prompt,
+    depth: Number.isFinite(depth) && n.depth !== "" && n.depth != null ? Math.max(0, Math.round(depth)) : 4,
+    role: ROLES.includes(n.role) ? n.role : "system",
+  };
+}
+
+/* `add` on top of `old`, a script of the same name replaced (loaded again) */
+export const mergeRegex = (old, add) => [...(old || []).filter((r) => !add.some((a) => a.name === r.name)), ...add];
+
+/* The scripts of one kind ("prompt", "display", "saved") a chat runs: the
+   active prompt's, then the character's own (kept as SillyTavern scripts on
+   the card), in SillyTavern's order. Switched-off ones are left out. */
+const STYLE_KEY = { prompt: "regex", display: "display", saved: "saved" };
+export function chatRegex(style, character, kind) {
+  const all = [...(style?.[STYLE_KEY[kind]] || []), ...tavernRegex(character?.regexScripts, kind)];
+  return all.filter((r) => !r.disabled);
+}
+
 /* A pattern whose {{macros}} are filled in from the chat (substituteRegex).
    Mode 2 escapes what they became, so a name with a dot or a bracket in it
    matches itself. */
@@ -206,16 +246,19 @@ function patternFor(rule, ctx) {
 }
 
 /* One script on one text. The replacement takes $1, $<name> and {{match}}
-   (the whole match), with the script's trim strings taken out of them. */
+   (the whole match), with the script's trim strings taken out of them; then,
+   as in SillyTavern, its macros ({{char}}, {{user}}, variables) are run. */
 function runOne(text, rule, ctx) {
   const re = regexOf(patternFor(rule, ctx));
   if (!re) return text;
-  const cut = (s) => rule.trim.reduce((a, t) => a.split(t).join(""), s ?? "");
+  const macros = (s) => runMacros(s, { user: ctx?.user, char: ctx?.char, vars: ctx?.vars });
+  const trims = (rule.trim || []).map(macros);
+  const cut = (s) => trims.reduce((a, t) => a.split(t).join(""), s ?? "");
   return text.replace(re, (...hit) => {
     const named = typeof hit[hit.length - 1] === "object" ? hit[hit.length - 1] : null;
     const groups = hit.slice(0, named ? -3 : -2);
-    return rule.replace.replace(/\{\{match\}\}|\$(\d+)|\$<([^>]+)>/gi, (m, n, name) =>
-      m.toLowerCase() === "{{match}}" ? cut(groups[0]) : n != null ? cut(groups[Number(n)]) : cut(named?.[name]));
+    return macros(rule.replace.replace(/\{\{match\}\}|\$(\d+)|\$<([^>]+)>/gi, (m, n, name) =>
+      m.toLowerCase() === "{{match}}" ? cut(groups[0]) : n != null ? cut(groups[Number(n)]) : cut(named?.[name])));
   });
 }
 
@@ -226,7 +269,7 @@ export function applyRegex(text, rules, role, depth, ctx) {
   let out = String(text ?? "");
   const names = ctx || rules?.ctx;
   for (const r of rules || []) {
-    if (!r.roles.includes(role)) continue;
+    if (r.disabled || !r.roles.includes(role)) continue;
     if (r.minDepth != null && depth < r.minDepth) continue;
     if (r.maxDepth != null && depth > r.maxDepth) continue;
     out = runOne(out, r, names);

@@ -9,16 +9,23 @@
    the prompt, the history list, editing, export — keeps reading one field and
    never has to know swipes exist. The versions live beside it:
 
-     swipes    [{ text, via? }]   every version, oldest first
-     swipeIdx  number             which one `content` is
+     swipes    [{ text, via?, reasoning?, reasoningMs? }]   every version, oldest first
+     swipeIdx  number                                     which one `content` is
 
    A message that has never been regenerated has neither field; it is a list
-   of one. */
+   of one. A version's other fields (the model that wrote it, its thinking
+   and how long that took) sit on the message beside `content` the same way.
+   A message whose thinking is kept never sends it back: the prompt reads
+   `content` only. */
+
+const EXTRAS = ["via", "reasoning", "reasoningMs"];
+/* Absent rather than undefined, so none shows up as a stray key. */
+const extrasOf = (o) => Object.fromEntries(EXTRAS.filter((k) => o?.[k] != null && o[k] !== "").map((k) => [k, o[k]]));
 
 /* Every version of a message, the plain single-version case included. */
 export function swipeList(m) {
   if (Array.isArray(m?.swipes) && m.swipes.length) return m.swipes;
-  return [m?.via ? { text: m?.content || "", via: m.via } : { text: m?.content || "" }];
+  return [{ text: m?.content || "", ...extrasOf(m) }];
 }
 
 export const swipeIndex = (m) => {
@@ -27,16 +34,16 @@ export const swipeIndex = (m) => {
   return Math.min(Math.max(0, i), n - 1);
 };
 
-/* `via` names the model that wrote a version when it was not the one picked.
-   Absent rather than undefined, so it never shows up as a stray key. */
+/* `via` names the model that wrote a version when it was not the one picked. */
 function withVersion(m, v) {
-  const { via, ...rest } = m;
-  return v.via ? { ...rest, content: v.text, via: v.via } : { ...rest, content: v.text };
+  const rest = { ...m };
+  for (const k of EXTRAS) delete rest[k];
+  return { ...rest, content: v.text, ...extrasOf(v) };
 }
 
-/* A new version, shown straight away. */
-export function addSwipe(m, text, via) {
-  const swipes = [...swipeList(m), via ? { text, via } : { text }];
+/* A new version, shown straight away. `thought`: { reasoning, reasoningMs }. */
+export function addSwipe(m, text, via, thought) {
+  const swipes = [...swipeList(m), { text, ...extrasOf({ via, ...thought }) }];
   return withVersion({ ...m, swipes, swipeIdx: swipes.length - 1, at: Date.now() }, swipes[swipes.length - 1]);
 }
 

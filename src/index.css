@@ -243,6 +243,8 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .nv-composer-actions svg { flex-shrink: 0; }
 @media(max-width:380px) { .nv-composer-pickers > button > span:not(.nv-ico) { display: none; } }
 .nv-chat-messages .nv-msg { max-width: 100%; overflow-wrap: anywhere; }
+/* Look → Chat bubble size: the text only, so bubbles keep their corners and padding */
+.nv-chat-messages :is(.nv-msg, .nv-msg-stream) { font-size: calc(.875rem * var(--nv-bubble-scale, 1)); }
 
 .nv-message-actions { flex-wrap: nowrap; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
 .nv-message-actions > button, .nv-message-actions > div { flex-shrink: 0; }

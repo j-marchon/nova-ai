@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { rollDice, runMacros, stripComments } from "../src/lib/macros.js";
-import { applyPromptRegex, applyRegex, readTavernPreset, tavernRegex } from "../src/lib/tavern.js";
+import { applyPromptRegex, applyRegex, readTavernPreset, regexFile, tavernRegex } from "../src/lib/tavern.js";
 import { parseStyleImport } from "../src/lib/styles.js";
 import { buildApiMessages } from "../src/lib/prompt.js";
 import { emptyData } from "../src/lib/data.js";
@@ -203,3 +203,70 @@ describe("a preset that places its own sections", () => {
   });
 });
 
+
+describe("as SillyTavern runs them", () => {
+  const rule = (o) => tavernRegex([{ scriptName: "t", placement: [2], promptOnly: true, ...o }])[0];
+
+  it("reads patterns as SillyTavern does: no slashes means no flags", () => {
+    expect(applyRegex("a a a", [rule({ findRegex: "a", replaceString: "b" })], "assistant", 0)).toBe("b a a");
+    expect(applyRegex("a a a", [rule({ findRegex: "/a/g", replaceString: "b" })], "assistant", 0)).toBe("b b b");
+  });
+
+  it("runs the macros in replacements and trim strings", () => {
+    const r = rule({ findRegex: "/<name>(.*?)<\/name>/g", replaceString: "{{char}} meets {{user}}: $1", trimStrings: ["{{user}}"] });
+    expect(applyRegex("<name>hi Ann</name>", [r], "assistant", 0, { user: "Ann", char: "Bo" })).toBe("Bo meets Ann: hi ");
+  });
+});
+
+describe("SillyTavern's newer macros", () => {
+  const fields = { description: "A {{char}} card", persona: "", lastUserMessage: "hello there" };
+  const run = (t, vars = {}) => runMacros(t, { vars, user: "Ann", char: "Bo", fields, seed: "c1", now: new Date(2026, 10, 25, 15, 4) });
+
+  it("branches with {{if}} and {{else}}, nested, on values, macros and variables", () => {
+    expect(run("{{if description}}D: {{description}}{{else}}none{{/if}}")).toBe("D: A Bo card");
+    expect(run("{{if persona}}P{{else}}no persona{{/if}}")).toBe("no persona");
+    expect(run("{{if !persona}}empty{{/if}}")).toBe("empty");
+    expect(run("{{setvar::hp::0}}{{if {{getvar::hp}}}}alive{{else}}dead{{/if}}")).toBe("dead");
+    expect(run("{{if 1}}a{{if 0}}b{{else}}c{{/if}}d{{else}}e{{/if}}")).toBe("acd");
+    expect(run("{{if .x}}set{{else}}unset{{/if}}", { x: "1" })).toBe("set");
+  });
+
+  it("does the variable shorthand, global variables and the rest", () => {
+    expect(run("{{.mood = happy}}{{.mood}} {{$g = 1}}{{$g++}} {{.n += 2}}{{.n}} {{.n >= 2}}")).toBe("happy 2 2 true");
+    expect(run("{{lastUserMessage}}|{{time}}|{{date}}|{{weekday}}|{{isotime}}|{{isodate}}")).toBe("hello there|3:04 PM|November 25, 2026|Wednesday|15:04|2026-11-25");
+    expect(run("{{setvar::m::1}}{{reverse::abc}}{{space}}{{hasvar::m}} {{deletevar::m}}{{hasvar::m}}")).toBe("cba true false");
+    expect(run("{{setglobalvar::x::5}}{{getglobalvar::x}} {{unknown::y}}")).toBe("5 {{unknown::y}}");
+    expect(run("{{pick::a::b::c::d}}")).toBe(run("{{pick::a::b::c::d}}"));
+    expect(runMacros("{{description}}", { user: "A" })).toBe("{{description}}");
+  });
+});
+
+describe("SillyTavern's block macros", () => {
+  const run = (t, vars = {}) => runMacros(t, { vars, user: "Ann", char: "Bo", fields: { persona: "p" } });
+
+  it("passes a block's content as the last argument, trimmed and de-indented unless #", () => {
+    expect(run("{{if persona}}\n  A\n    B\n{{/if}}")).toBe("A\n  B");
+    expect(run("{{#if persona}}\n  A\n{{/if}}")).toBe("\n  A\n");
+    expect(run("{{#setvar::x}}  long {{char}}  {{/setvar}}{{setvar::y}}\n  hi\n{{/setvar}}[{{getvar::x}}|{{.y}}]")).toBe("[  long Bo  |hi]");
+  });
+
+  it("does not take a complete macro inside a block for the start of another", () => {
+    expect(run("{{#setvar::a}}x{{setvar::b::1}}y{{/setvar}}[{{.a}}|{{.b}}]")).toBe("[xy|1]");
+  });
+
+  it("reads on past a {{ that never closes, and keeps keyed variables", () => {
+    expect(run("{{user|| acts {{user}}")).toBe("{{user|| acts Ann");
+    expect(run("{{setvarkey::o::a::1}}{{setvarkey::l::0::x}}{{getvarkey::o::a}}|{{getvarkey::l::0}}|{{.o}}")).toBe('1|x|{"a":"1"}');
+    expect(run("{{outlet::lore}}|{{/foo}}")).toBe("|{{/foo}}");
+  });
+});
+
+describe("a regex file exported from SillyTavern", () => {
+  it("is read as scripts, one or a list, and anything else is not", () => {
+    const one = { scriptName: "s", findRegex: "/x/g", replaceString: "y", placement: [2], markdownOnly: true };
+    expect(regexFile(JSON.stringify(one)).display).toHaveLength(1);
+    expect(regexFile(JSON.stringify([one, { ...one, scriptName: "p", markdownOnly: false, promptOnly: true }])).regex).toHaveLength(1);
+    expect(regexFile(JSON.stringify({ prompts: [] }))).toBeNull();
+    expect(regexFile("not json")).toBeNull();
+  });
+});

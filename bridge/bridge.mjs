@@ -45,7 +45,7 @@ import { fileURLToPath } from "node:url";
 import { exec, execFile } from "node:child_process";
 import { forgetGeminiBrowser, getGeminiCookies, learnGeminiModels } from "./gemini-cookies.mjs";
 import { GeminiWebSession, httpsRequest, parseCookieInput } from "./gemini-web.mjs";
-import { CLAUDE_MODELS, claudeChat, claudeLogin, claudeStatus } from "./claude-code.mjs";
+import { claudeChat, claudeLogin, claudeModels, claudeStatus } from "./claude-code.mjs";
 import {
   PROVIDER_IDS,
   SUBSCRIPTION_MODELS,
@@ -209,6 +209,8 @@ function autoDiscoverCliCredentials() {
    file to read instead (tests), or "none" to skip it.
    shortcut: macOS and Linux follow go-keyring's documented layout, only Windows was tried. */
 const AGY_PS = "Add-Type -TypeDefinition 'using System;using System.Runtime.InteropServices;public class NovaCred{[DllImport(\"advapi32.dll\",CharSet=CharSet.Unicode)]public static extern bool CredReadW(string t,int y,int f,out IntPtr c);[StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)]public struct C{public int F;public int T;public string N;public string M;public long W;public int S;public IntPtr B;}}';$p=[IntPtr]::Zero;if([NovaCred]::CredReadW('gemini:antigravity',1,0,[ref]$p)){$c=[Runtime.InteropServices.Marshal]::PtrToStructure($p,[type][NovaCred+C]);$b=New-Object byte[] $c.S;[Runtime.InteropServices.Marshal]::Copy($c.B,$b,0,$c.S);[Console]::Out.Write([Convert]::ToBase64String($b))}";
+/* Linux without secret-tool (libsecret-tools; the .deb depends on it, an AppImage cannot) */
+let secretToolMissing = false;
 function readAgyCredential() {
   const override = process.env.NOVA_BRIDGE_AGY_CRED;
   if (override === "none") return Promise.resolve(null);
@@ -219,6 +221,7 @@ function readAgyCredential() {
       ? ["security", ["find-generic-password", "-s", "gemini", "-a", "antigravity", "-w"]]
       : ["secret-tool", ["lookup", "service", "gemini", "username", "antigravity"]];
   return new Promise((resolve) => execFile(cmd, args, { timeout: 15000, windowsHide: true }, (err, out) => {
+    if (cmd === "secret-tool") secretToolMissing = err?.code === "ENOENT";
     if (err) return resolve(null);
     let text = String(out).trim();
     if (process.platform === "win32") text = Buffer.from(text, "base64").toString("utf8");
@@ -278,7 +281,7 @@ const expiring = (at) => !at || Date.now() > Number(at) - 60000;
    words; only someone running Nova from its source is pointed at .env. */
 const BUNDLED = typeof __NOVA_BUILT_GOOGLE__ !== "undefined";
 const googleReady = (channel) => !!(GOOGLE[channel]?.clientId && GOOGLE[channel]?.clientSecret);
-const GOOGLE_MISSING = "Sign in to Antigravity on this computer, then restart Nova Bridge.";
+const GOOGLE_MISSING = "Sign in to the Antigravity app (or run agy) on this computer, then select Sign in again.";
 function googleClient(channel) {
   const cfg = GOOGLE[channel];
   if (!googleReady(channel)) {
@@ -568,22 +571,27 @@ async function antigravityModels() {
   const g = await ensureGoogleAuth("antigravity");
   const r = await codeAssistFetch("antigravity", g, "fetchAvailableModels", { project: g.project });
   if (!r.ok) throw await failure("Antigravity", r);
-  const raw = (await r.json()).models || {};
-  return Array.isArray(raw) ? raw.map((m) => [m.id || m.name, m]) : Object.entries(raw);
+  const data = await r.json();
+  const raw = data.models || {};
+  /* the ids Antigravity's own model picker shows (agentModelSorts); the rest
+     of the catalog is internal: autocomplete, aliases, tiered routes */
+  const picker = new Set((data.agentModelSorts || []).flatMap((s) => (s.groups || []).flatMap((g) => g.modelIds || [])));
+  const rows = Array.isArray(raw) ? raw.map((m) => [m.id || m.name, m]) : Object.entries(raw);
+  return rows.map(([id, m]) => [id, m, picker.size ? picker.has(id) : !/embed|image|tab_|chat_\d/i.test(id)]);
 }
 
 const LISTERS = {
   async antigravity() {
     const rows = await antigravityModels();
     return rows
-      /* "-disabled" is the placeholder a plan without that model gets (Argon on the free tier) */
-      .filter(([id]) => id && !/embed|image|tab_|chat_\d|-disabled$/i.test(id))
+      /* disabled: a model the plan lacks (Argon on the free tier) */
+      .filter(([id, m, shown]) => id && shown && !m.disabled && !/-disabled$/i.test(id))
       .map(([id, m]) => modelEntry("antigravity", id, { name: m.displayName || m.label, ctx: m.maxTokens || m.contextWindow || knownName("antigravity", id).ctx }));
   },
   async claude() {
     const s = await checkClaude();
     if (!s?.loggedIn) throw notConnected("Claude");
-    return CLAUDE_MODELS.map((m) => modelEntry("claude", m.id, { name: m.name, ctx: 200000 }));
+    return (await claudeModels()).map((m) => modelEntry("claude", m.id, { name: m.name, ctx: m.ctx || 200000 }));
   },
   async openai() {
     const o = await ensureOpenAIAuth();
@@ -591,7 +599,8 @@ const LISTERS = {
     if (!r.ok) throw await failure("ChatGPT", r);
     const rows = (await r.json()).models || [];
     return rows
-      .filter((m) => m.slug && m.visibility !== "hide")
+      /* "list" is what Codex's own picker shows */
+      .filter((m) => m.slug && m.visibility === "list")
       .map((m) => modelEntry("openai", m.slug, { name: m.display_name, ctx: m.context_window }));
   },
   async "gemini-web"() {
@@ -862,7 +871,7 @@ export function bridgeSetGeminiTransport(fn) {
   modelCache.delete(GEMINI);
 }
 
-/* Replaces how the sign-in is fetched from a browser (tests): () => Promise<{ cookies, authuser }> */
+/* Replaces how the sign-in is fetched from a browser (tests): ({ skipSaved }) => Promise<{ cookies, authuser, saved }> */
 export function bridgeSetBrowserSignIn(fn) {
   browserSignIn = typeof fn === "function" ? fn : null;
 }
@@ -1033,16 +1042,11 @@ function geminiKnown() {
   return map;
 }
 
-/* Exactly what the app's picker offers (a model the plan does not include
-   says so), then "default", which sends no model at all. Learned models are
-   listed only while the app's list cannot be read. */
+/* Exactly what the app's picker offers this plan, nothing else: no default,
+   no model the plan lacks, and nothing while the list cannot be read.
+   (Learned models and "default" still answer a chat that names them.) */
 function geminiModelList() {
-  const app = geminiAppList?.models;
-  const rows = app
-    ? app.map((m) => modelEntry(GEMINI, m.slug, { name: m.locked ? `${m.name}, not on this plan` : m.name, ctx: GEMINI_CTX }))
-    : [...geminiKnown().values()].filter((m) => !m.stale).map((m) => modelEntry(GEMINI, m.slug, { name: m.name || m.slug, ctx: GEMINI_CTX }));
-  rows.push(modelEntry(GEMINI, "default", { name: "Gemini app default", ctx: GEMINI_CTX }));
-  return rows;
+  return (geminiAppList?.models || []).filter((m) => !m.locked).map((m) => modelEntry(GEMINI, m.slug, { name: m.name, ctx: GEMINI_CTX }));
 }
 
 /* Add, replace or remove a learned model: { slug, name, header } or { remove: slug }.
@@ -1400,7 +1404,17 @@ const publicFlow = (f) => (f ? { status: f.status, user_code: f.user_code, verif
 const coarseFlow = (f) => (f ? { status: f.status } : null);
 
 const START = {
-  antigravity: (o) => startGoogleOAuth("antigravity", o).then(publicFlow),
+  /* Antigravity (the app or agy) signed in on this computer is used at once;
+     otherwise Google's sign-in page, when this build has the client for it */
+  async antigravity(o) {
+    const cred = await readAgyCredential();
+    if (!cred?.token?.refresh_token && secretToolMissing && !googleReady("antigravity")) {
+      throw new UpstreamError("Nova Bridge needs secret-tool to read Antigravity's sign-in. Install it (sudo apt install libsecret-tools), then select Sign in again.", 503);
+    }
+    if (!cred?.token?.refresh_token) return startGoogleOAuth("antigravity", o).then(publicFlow);
+    signedIn("antigravity", { source: "agy", email: cred.id_token_email || "", project: "" });
+    return publicFlow(pendingFlows.get("antigravity"));
+  },
   /* Only from the Bridge window, after its warning: Claude Code signs in
      in the browser (or is signed in already), then the Bridge counts it. */
   async claude({ window } = {}) {
@@ -1416,7 +1430,12 @@ const START = {
       .catch((e) => pendingFlows.set("claude", { status: "error", message: e.message }));
     return publicFlow(pendingFlows.get("claude"));
   },
-  openai: startOpenAIDeviceFlow,
+  /* the Codex sign-in on this computer is used at once; otherwise a device code */
+  async openai() {
+    if (!readJson(CODEX_AUTH())?.tokens?.refresh_token) return startOpenAIDeviceFlow();
+    signedIn("openai", { source: "codex-cli" });
+    return publicFlow(pendingFlows.get("openai"));
+  },
   /* The user's own browser, on this computer only: Firefox's Google sign-in, or
      Chrome/Edge/Brave opened for signing in (Google refuses embedded windows). */
   async [GEMINI]({ local } = {}) {
@@ -1427,12 +1446,19 @@ const START = {
     if (current?.status === "pending" && !current.retry) return publicFlow(current);
     pendingFlows.set(GEMINI, { status: "pending", message: "Looking for your Google sign-in…" });
     const say = (message) => { if (pendingFlows.get(GEMINI)?.status === "pending") pendingFlows.set(GEMINI, { status: "pending", message }); };
+    const fetchCookies = (skipSaved) => (browserSignIn ? browserSignIn({ skipSaved }) : getGeminiCookies({ profileDir: GEMINI_PROFILE, interactive: true, onStatus: say, skipSaved }));
+    const use = (r) => {
+      if (r?.retryMessage) pendingFlows.set(GEMINI, { status: "pending", retry: true, message: r.retryMessage });
+      else return geminiSignedIn(r?.cookies, r?.authuser || 0, "browser");
+    };
     Promise.resolve()
-      .then(() => (browserSignIn || (() => getGeminiCookies({ profileDir: GEMINI_PROFILE, interactive: true, onStatus: say })))())
-      .then((r) => {
-        if (r?.retryMessage) pendingFlows.set(GEMINI, { status: "pending", retry: true, message: r.retryMessage });
-        else return geminiSignedIn(r?.cookies, r?.authuser || 0, "browser");
-      })
+      .then(() => fetchCookies(false))
+      /* the browser's saved sign-in Google has since ended: open the window to sign in again */
+      .then((r) => Promise.resolve(use(r)).catch((e) => {
+        if (e.status !== 401 || !r?.saved) throw e;
+        say("That sign-in has ended. Sign in to Google in the browser window, then close it.");
+        return Promise.resolve(fetchCookies(true)).then(use);
+      }))
       .catch((e) => pendingFlows.set(GEMINI, { status: "error", message: e.message }));
     return publicFlow(pendingFlows.get(GEMINI));
   },
@@ -2062,9 +2088,7 @@ export function bridgeInfo() {
     errors: stats.errors,
     lastError: stats.last,
     subscriptions: SUBSCRIPTION_PROVIDERS.map((p) => ({ id: p.id, name: p.name || p.id, connected: connected.includes(p.id), problem: authStore[p.id]?.problem || null, flow: bridgeFlow(p.id),
-      ...(authStore[p.id]?.source === "agy" ? { note: `Using Antigravity on this computer${authStore[p.id].email ? ` (${authStore[p.id].email})` : ""}` } : {}),
-      /* a Google sign-in this build cannot offer: shown, but without a Sign in button */
-      ...(GOOGLE[p.id] && BUNDLED && !googleReady(p.id) ? { unavailable: GOOGLE_MISSING } : {}) })),
+      ...(authStore[p.id]?.source === "agy" ? { note: `Using Antigravity on this computer${authStore[p.id].email ? ` (${authStore[p.id].email})` : ""}` } : {}) })),
     pairedDevices: deviceAccess.list(),
     pending: deviceAccess.list().filter((d) => d.status === "pending"),
     sessions,

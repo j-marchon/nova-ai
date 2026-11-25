@@ -280,12 +280,13 @@ async function savedChromiumCookies({ profileDir, exe, signal }) {
    plain window of that browser on gemini.google.com for the user to sign in
    (no DevTools port: Google refuses those), read once it is closed.
    Resolves { cookies, authuser, from }. */
-export async function chromiumCookies({ profileDir, exe, onStatus, signal, timeoutMs = 10 * 60 * 1000 } = {}) {
+export async function chromiumCookies({ profileDir, exe, onStatus, signal, skipSaved = false, timeoutMs = 10 * 60 * 1000 } = {}) {
   const found = exe || findChromium();
   if (!found) throw new BrowserSignInError("No Chrome, Edge, Brave or Chromium found. Install one, set NOVA_BRIDGE_BROWSER to its path, or paste your cookies instead.");
   fs.mkdirSync(profileDir, { recursive: true, mode: 0o700 });
-  const saved = await savedChromiumCookies({ profileDir, exe: found, signal }).catch(() => null);
-  if (saved) return saved;
+  /* skipSaved: the saved sign-in was tried and Google had ended it */
+  const saved = skipSaved ? null : await savedChromiumCookies({ profileDir, exe: found, signal }).catch(() => null);
+  if (saved) return { ...saved, saved: true };
 
   onStatus?.(`Sign in to Google in the ${found.name} window, then close it.`);
   const child = spawn(found.path, [
@@ -318,7 +319,7 @@ export async function chromiumCookies({ profileDir, exe, onStatus, signal, timeo
 
 /* ---------- the two together ---------- */
 
-export async function getGeminiCookies({ profileDir, prefer = process.env.NOVA_BRIDGE_GEMINI_BROWSER || "auto", interactive = false, onStatus, signal, exe, roots } = {}) {
+export async function getGeminiCookies({ profileDir, prefer = process.env.NOVA_BRIDGE_GEMINI_BROWSER || "auto", interactive = false, onStatus, signal, exe, roots, skipSaved } = {}) {
   if (prefer === "none") throw new BrowserSignInError("Browser sign-in is switched off. Paste your gemini.google.com cookies instead.");
   if (prefer === "auto" || prefer === "firefox") {
     const ff = await firefoxCookies(roots ? { roots } : undefined).catch(() => null);
@@ -338,7 +339,7 @@ export async function getGeminiCookies({ profileDir, prefer = process.env.NOVA_B
     }
     if (prefer === "firefox") throw new BrowserSignInError("No Google sign-in found in Firefox. Sign in to Google in Firefox first.");
   }
-  return chromiumCookies({ profileDir, exe, onStatus, signal });
+  return chromiumCookies({ profileDir, exe, onStatus, signal, skipSaved });
 }
 
 /* Delete the saved browser profile (the sign-in made through chromiumCookies). */

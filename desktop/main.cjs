@@ -26,6 +26,9 @@ const ROOT = packed ? __dirname : path.join(__dirname, "..");
 const BRIDGE_FLAG = "--nova-bridge";
 const bridgeMode = process.argv.includes(BRIDGE_FLAG);
 if (!bridgeMode) app.setName("Nova");
+/* Windows: the id the Start-menu entry carries (appId in build-desktop.mjs), so the taskbar
+   shows Nova's icon and groups with it; the Bridge, its own program, gets its own */
+if (process.platform === "win32") app.setAppUserModelId(bridgeMode ? "com.nova.roleplay.desktop.bridge" : "com.nova.roleplay.desktop");
 /* Read aloud: Chromium on Linux speaks only through speech-dispatcher, and only
    when asked to (otherwise speechSynthesis has no voices and speak() fails with
    "synthesis-failed"). Needs speech-dispatcher and a voice such as espeak-ng. */
@@ -238,6 +241,28 @@ else {
   ipcMain.handle("nova:skin", (e, id) => { if (fromNova(e)) { shareSkin(id); look.skin = typeof id === "string" ? id : "nova"; sendLook(); } });
   ipcMain.handle("nova:icon", (e, id) => { if (fromNova(e)) skinIcon(typeof id === "string" ? id : "nova", win); });
   ipcMain.handle("nova:scheme", (e, scheme) => { if (fromNova(e)) { look.scheme = scheme === "light" ? "light" : "dark"; sendLook(); } });
+  /* Update (the "A new update is available" prompt): the installer, the AppImage and the
+     .deb download the new release from GitHub and restart into it (electron-updater,
+     reading app-update.yml from the package; a .deb asks for the admin password).
+     The portable .exe cannot replace itself; it is sent to the download page. */
+  ipcMain.handle("nova:update", async (e) => {
+    if (!fromNova(e)) return;
+    const linuxPackage = process.platform === "linux" && (!!process.env.APPIMAGE || fs.existsSync(path.join(process.resourcesPath, "package-type")));
+    const windowsInstall = process.platform === "win32" && !process.env.PORTABLE_EXECUTABLE_FILE;
+    if (!app.isPackaged || !(windowsInstall || linuxPackage)) return { manual: true };
+    const updater = require(packed ? path.join(ROOT, "updater.cjs") : "electron-updater").autoUpdater;
+    updater.autoDownload = false;
+    updater.autoInstallOnAppQuit = false;
+    const progress = (p) => { if (!e.sender.isDestroyed()) e.sender.send("nova:update-progress", p.percent); };
+    updater.on("download-progress", progress);
+    try {
+      const found = await updater.checkForUpdates();
+      if (!found?.isUpdateAvailable) return { latest: true };
+      await updater.downloadUpdate();
+    } finally { updater.removeListener("download-progress", progress); }
+    setImmediate(() => updater.quitAndInstall(true, true));
+    return { installing: true };
+  });
   /* the title bar's buttons, from the title bar only */
   ipcMain.handle("nova:bar", (e, action) => {
     if (!win || !bar || e.sender !== bar.webContents) return;

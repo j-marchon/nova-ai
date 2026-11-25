@@ -12,7 +12,7 @@ import { addSwipe, editMessage } from "../../lib/swipes.js";
 import { hideNotes, joinContinuation, stripTracker, trimToSentence } from "../../lib/text.js";
 import { uid } from "../../lib/util.js";
 import { genParams } from "../../lib/styles.js";
-import { applyRegex } from "../../lib/tavern.js";
+import { applyRegex, chatRegex } from "../../lib/tavern.js";
 import { activity, activityModelLabel, dismissActivity, runActivity, startActivity } from "../../lib/activity.js";
 import { createStreamStore } from "./streamStore.js";
 
@@ -116,6 +116,8 @@ function chatWork({ getData, update, chatId, stream = createStreamStore(), handl
      { name, characterId? } or { narrator: true } */
   const pickedLead = stream.get().opts?.lead || null;
   const varsRef = { current: null }, thinkAcc = { current: "" };
+  /* the lorebook timed-effects record (lore.js), carried like varsRef */
+  const loreRef = { current: null };
   const notesRef = { current: false }, scopeBusy = { current: false };
   const patchChatWith = fn => update(d => ({ ...d, chats: d.chats.map(c => c.id === chatId ? fn(c) : c) }));
   const saveReply = async (fn, signal) => {
@@ -250,27 +252,43 @@ function chatWork({ getData, update, chatId, stream = createStreamStore(), handl
     /* Thinking only needs to be announced once, so this is a single state
        change per request rather than anything paced. */
     let announced = false;
+    /* when the thinking began and when the reply itself started, for the
+       saved "Thought for Ns" */
+    let thinkFrom = 0, thinkTo = 0;
     const announceThinking = (t) => {
+      if (!thinkFrom) thinkFrom = Date.now();
       if (typeof t === "string") { thinkAcc.current += t; paint(); }
       if (announced) return;
       announced = true;
       setIsThinking(true);
     };
+    /* the thinking as it stands, to keep with the reply (never sent back) */
+    const thought = () => {
+      const reasoning = thinkAcc.current.trim();
+      if (!reasoning) return {};
+      const ms = (thinkTo || Date.now()) - thinkFrom;
+      return { reasoning, ...(thinkFrom && ms > 0 ? { reasoningMs: ms } : {}) };
+    };
 
     /* `via` is the model that actually wrote the reply, kept only when it is
        not the one selected, so a substitute is never mistaken for the style
        being ignored. */
-    const save = async (text, via) => {
-      /* a preset's scripts that rewrite the reply as it is saved */
-      const rewrite = genParams(scoping ? scopeSettings : mine).saved;
-      if (rewrite?.length) text = applyRegex(text, rewrite, "assistant", 0, { user: userName, char: leadName || character?.name || universe?.name });
+    const save = async (text, via, kept = {}) => {
+      /* a preset's scripts that rewrite the reply as it is saved, and its
+         thinking (SillyTavern placement 6) */
+      const rewrite = chatRegex(genParams(scoping ? scopeSettings : mine), character, "saved");
+      const names = { user: userName, char: leadName || character?.name || universe?.name };
+      if (rewrite?.length) text = applyRegex(text, rewrite, "assistant", 0, names);
+      if (rewrite?.length && kept.reasoning) kept = { ...kept, reasoning: applyRegex(kept.reasoning, rewrite, "reasoning", 0, names).trim() };
+      if (!kept.reasoning) kept = {};
       const reply = { id: uid(), role: "assistant", content: text, at: Date.now(),
         ...(leadName ? { speaker: leadName, ...(lead.characterId ? { speakerId: lead.characterId } : {}) } : {}),
-        ...(via ? { via } : {}) };
+        ...(via ? { via } : {}),
+        ...(kept.reasoning ? kept : {}) };
       const anchor = history.at(-1)?.id;
       await saveReply(c => {
         if (swipeOf && !c.messages.some(m => m.id === swipeOf.id)) return c;
-        if (swipeOf) return { ...c, updatedAt: Date.now(), messages: c.messages.map(m => m.id === swipeOf.id ? addSwipe(m, text, via) : m) };
+        if (swipeOf) return { ...c, updatedAt: Date.now(), messages: c.messages.map(m => m.id === swipeOf.id ? addSwipe(m, text, via, kept) : m) };
         const at = anchor ? c.messages.findIndex(m => m.id === anchor) : -1;
         if (anchor && at < 0) return c;
         /* the in-world minute on the phone's clock, once the phone is set up */
@@ -293,6 +311,8 @@ function chatWork({ getData, update, chatId, stream = createStreamStore(), handl
        The ref carries the newest set into the next turn of a play-on run,
        which starts before the saved chat reaches this closure. */
     const varsBase = varsRef.current?.id === chatId ? varsRef.current.vars : chat.vars || {};
+    const timedBase = loreRef.current?.id === chatId ? loreRef.current.timed : chat.loreTimed;
+    let timedNext = timedBase;
     let best = null;
 
     try {
@@ -300,7 +320,9 @@ function chatWork({ getData, update, chatId, stream = createStreamStore(), handl
         let turnExtra = extra;
         if (attempt) {
           acc = "";
-          stream.set({ text: "" });
+          thinkAcc.current = "";
+          thinkFrom = thinkTo = 0;
+          stream.set({ text: "", think: "" });
           const note = `Do not use these phrases: ${best.hits.map((h) => `"${h}"`).join(", ")}`;
           turnExtra = extra ? extra.replace(/\)$/, ` ${note}.)`) : `(${note}.)`;
         }
@@ -315,11 +337,18 @@ function chatWork({ getData, update, chatId, stream = createStreamStore(), handl
             ? scopeNote({ scope: live, character, universe, ensemble, userName, step: scopeStep, lead })
             : null,
           vars,
+          seed: chatId,
+          loreTimed: timedBase,
+          onLoreTimed: (t) => { timedNext = t; },
           ...ambientOf(history),
         });
         if (!attempt && JSON.stringify(vars) !== JSON.stringify(varsBase)) {
           varsRef.current = { id: chatId, vars };
           patchChatWith((c) => ({ ...c, vars }));
+        }
+        if (!attempt && JSON.stringify(timedNext) !== JSON.stringify(timedBase)) {
+          loreRef.current = { id: chatId, timed: timedNext };
+          patchChatWith((c) => ({ ...c, loreTimed: timedNext }));
         }
         const res = await streamChat({
           settings: data.settings,
@@ -328,7 +357,7 @@ function chatWork({ getData, update, chatId, stream = createStreamStore(), handl
           signal: controller.signal,
           /* The pin is per conversation, so it is the chat's own id. */
           sessionId: chatId,
-          onToken: (t) => { acc += t; paint(); },
+          onToken: (t) => { if (thinkFrom && !thinkTo) thinkTo = Date.now(); acc += t; paint(); },
           onReasoning: announceThinking,
         });
         /* Log what that reply actually cost and how long it took to start.
@@ -368,23 +397,23 @@ function chatWork({ getData, update, chatId, stream = createStreamStore(), handl
         const asked = activeModel(data.settings);
         const via = sourceOf(data.settings) === "openrouter" && servedElsewhere(asked, res?.servedBy) ? res.servedBy : null;
         const hits = bannedHits(final, banned);
-        if (!best || hits.length < best.hits.length) best = { text: final, via, hits };
+        if (!best || hits.length < best.hits.length) best = { text: final, via, hits, thought: thought() };
         if (!hits.length) break;
       }
-      if (best) await save(best.text, best.via);
+      if (best) await save(best.text, best.via, best.thought);
     } catch (e) {
       if (e.name === "AbortError") {
         /* stopped during a rewrite: the finished first version beats half of
            the second */
-        if (best) await save(best.text, best.via);
+        if (best) await save(best.text, best.via, best.thought);
         else {
           const t = takeContinue(scrub(acc)).text;
-          if (t) await save(t);
+          if (t) await save(t, undefined, thought());
         }
         /* stopping ends a scene that was playing by itself */
         cont = false;
       } else if (best) {
-        await save(best.text, best.via);
+        await save(best.text, best.via, best.thought);
       } else if (e.message === "Failed to fetch") {
         setError("Could not reach OpenRouter. Check your connection.");
       } else {
@@ -598,6 +627,8 @@ function chatWork({ getData, update, chatId, stream = createStreamStore(), handl
       lorebooks: books,
       authorsNote: chatRef.current?.authorsNote || chat.authorsNote,
       vars: { ...(chatRef.current.vars || {}) },
+      seed: chatId,
+      loreTimed: chatRef.current.loreTimed,
       ...ambientOf(history),
     });
 
@@ -674,6 +705,8 @@ function chatWork({ getData, update, chatId, stream = createStreamStore(), handl
         mode: "continue",
         extra: "[Continue your last message from exactly where it stopped. Do not repeat anything already written; write only the new text.]",
         vars,
+        seed: chatId,
+        loreTimed: chatRef.current.loreTimed,
         ...ambientOf(chatRef.current.messages.slice(0, i + 1)),
       });
       const res = await streamChat({

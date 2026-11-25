@@ -16,6 +16,8 @@ public class NovaActivity extends BridgeActivity {
         registerPlugin(NovaBackPlugin.class);
         /* the launcher icon follows the skin; see NovaIconPlugin */
         registerPlugin(NovaIconPlugin.class);
+        /* Update downloads the APK and opens the installer; see NovaUpdatePlugin */
+        registerPlugin(NovaUpdatePlugin.class);
         super.onCreate(savedInstanceState);
         /* a new app icon chosen last time: switch it now, while nothing is
            open, and come back through the new launcher entry */

@@ -1,4 +1,4 @@
-import { normalizeUiScale } from "./uiScale.js";
+import { UI_BASE, normalizeBubbleScale, normalizeUiScale } from "./uiScale.js";
 import { isPackId } from "../skins/pack.js";
 import { DEFAULT_PROVIDERS, newProvider, providersFromLegacy } from "./providers.js";
 import { DEFAULT_STYLE, STYLE_PRESETS, customStyleList, tuningKey } from "./styles.js";
@@ -238,6 +238,8 @@ export const emptyData = {
     loreOn: true,
     loreDepth: 4,
     loreBudget: 800,
+    /* extra passes in which matched entries trigger more; 0 is off */
+    loreRecursion: 0,
     /* your own one-tap messages above the message box; none to start */
     quickReplies: [],
     /* saved author's notes: [{id,name,text}] */
@@ -268,6 +270,8 @@ export const emptyData = {
     /* "dark" | "light" | "auto" (follows the phone) */
     scheme: "dark",
     uiScale: 1,
+    /* Look → Chat bubble size: the text in chat bubbles */
+    bubbleScale: 1,
     /* the page backdrop behind every tab: a preset id, or a custom image */
     bgPreset: "none",
     bgImage: null,
@@ -466,7 +470,12 @@ export function normalizeData(input) {
         if (!SCHEMES.includes(ap.scheme)) ap.scheme = emptyData.appearance.scheme;
         if (!MOTIONS.includes(ap.motion)) ap.motion = emptyData.appearance.motion;
         if (ap.skin !== "nova" && ap.skin !== "minimal" && !isPackId(ap.skin)) ap.skin = emptyData.appearance.skin;
+        /* UI size used to count from the web size; it now counts from UI_BASE.
+           A size picked before is kept as it looked, once. */
+        if (!p.appearance?.uiSizeRebased && typeof ap.uiScale === "number" && ap.uiScale !== 1) ap.uiScale /= UI_BASE;
+        ap.uiSizeRebased = true;
         ap.uiScale = normalizeUiScale(ap.uiScale);
+        ap.bubbleScale = normalizeBubbleScale(ap.bubbleScale);
         /* one typeface and continuous corners now; the pickers are gone */
         delete ap.shape;
         delete ap.font;

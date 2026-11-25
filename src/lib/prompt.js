@@ -6,7 +6,7 @@ import { trimHistory } from "./window.js";
 import { activeSummary, memoryCovered } from "./memory.js";
 import { DEFAULT_LORE_BUDGET, DEFAULT_SCAN_DEPTH, selectLore } from "./lore.js";
 import { runMacros } from "./macros.js";
-import { applyPromptRegex } from "./tavern.js";
+import { applyPromptRegex, chatRegex, depthPromptOf } from "./tavern.js";
 import { searchRelevantContext } from "./rag.js";
 
 /* ---------- prompt assembly ---------- */
@@ -64,7 +64,7 @@ export const STOPWORDS = new Set(("a an the and or but so of to in on at for wit
 export const words = (t) => t.toLowerCase().replace(/[*_"“”]/g, " ").replace(/[^\p{L}\p{N}'\s]/gu, " ").split(/\s+/).filter(Boolean);
 
 export function repetitionNotes(history) {
-  const recent = history.filter((m) => m.role === "assistant").slice(-REPEAT_WINDOW).map((m) => m.content || "");
+  const recent = history.filter((m) => m.role === "assistant" && !m.hidden).slice(-REPEAT_WINDOW).map((m) => m.content || "");
   if (recent.length < 2) return [];
   const notes = [];
 
@@ -164,9 +164,9 @@ const listNames = (names) =>
    note for a chat with Scope on (see scope.js), or nothing. */
 export function buildApiMessages({
   character, universe, ensemble = [], persona, username, history, settings,
-  extra, memory, scene, mode, direction, lorebooks, scope, vars = {},
+  extra, memory, scene, mode, direction, lorebooks, scope, vars = {}, seed,
   world, phone,
-  authorsNote, recalledContext,
+  authorsNote, recalledContext, loreTimed, onLoreTimed,
 }) {
   const userName = persona?.name || username || "You";
   const style = genParams(settings);
@@ -182,7 +182,18 @@ export function buildApiMessages({
      and the chat's variables in `vars`, which is changed in place and is
      the caller's to save. Everything is filled in the order it is sent, so
      a block reads what the blocks above it set. */
-  const fill = (t, name = charName) => runMacros(t || "", { vars, user: userName, char: name });
+  const card = universe ? { description: universe.story, scenario: universe.rules } : character || {};
+  const lastOf = (role) => [...(history || [])].reverse().find((m) => !role || m.role === role)?.content || "";
+  /* what {{description}}, {{lastUserMessage}} … read (macros.js FIELD) */
+  const fields = {
+    description: card.description, personality: card.personality, scenario: card.scenario,
+    persona: persona?.description, mesExamples: card.exampleDialogs,
+    charPrompt: card.systemPrompt, charInstruction: card.postHistoryInstructions,
+    creatorNotes: card.creatorNotes, charVersion: card.characterVersion, greeting: card.firstMessage,
+    lastMessage: lastOf(), lastUserMessage: lastOf("user"), lastCharMessage: lastOf("assistant"),
+    model: activeModel(settings),
+  };
+  const fill = (t, name = charName) => runMacros(t || "", { vars, user: userName, char: name, fields, seed });
   const useCard = settings.cardInstructions !== false;
 
   /* The framing sentence is style-derived. It used to say "immersive" for
@@ -261,8 +272,12 @@ export function buildApiMessages({
     ? selectLore(lorebooks, history, {
         depth: settings.loreDepth || DEFAULT_SCAN_DEPTH,
         budget: settings.loreBudget || DEFAULT_LORE_BUDGET,
+        recursion: settings.loreRecursion,
+        timed: loreTimed,
       })
-    : { constant: [], triggered: [] };
+    : { constant: [], triggered: [], timed: loreTimed };
+  /* the next timed-effects record (lore.js), the caller's to save */
+  onLoreTimed?.(lore.timed);
   if (lore.constant.length) sys += `\n\n[World info]\n${lore.constant.map((e) => fill(e.content.trim())).join("\n\n")}`;
 
   /* The long-term memory. After the cards and before [Style]: it changes only
@@ -270,6 +285,8 @@ export function buildApiMessages({
      cut anyway, so the cards above it stay cached. */
   const memoryOn = settings.memoryOn !== false;
   const summary = memoryOn ? activeSummary(history, memory) : "";
+  /* {{summary}}, as SillyTavern's Summarize fills it */
+  fields.summary = summary;
   if (summary) sys += `\n\n[Story so far]\nWhat happened earlier in this story, before the conversation below:\n${summary}`;
 
   /* [Style] sits last of the content blocks, so it is the most recent thing
@@ -344,7 +361,9 @@ export function buildApiMessages({
      this string whenever a keyword matched, which invalidated the cached
      prefix and reprocessed the whole prompt on the busiest turns. */
   const covered = memoryOn ? memoryCovered(history, memory) : Infinity;
-  const kept = trimHistory(history, settings.historyTokens || DEFAULT_HISTORY_TOKENS, covered);
+  /* a message hidden from the AI stays in the chat and is never sent */
+  const inWindow = trimHistory(history, settings.historyTokens || DEFAULT_HISTORY_TOKENS, covered);
+  const kept = inWindow.filter((m) => !m.hidden);
   /* In a multi-character chat the model has to know who said what, and an
      assistant turn carries no name of its own, so one spoken by anyone but
      the main character is labelled.
@@ -355,9 +374,9 @@ export function buildApiMessages({
     if (m.role === "assistant" && m.speaker && m.speaker !== charName) return `${m.speaker}: ${m.content}`;
     return m.content;
   };
-  /* an imported preset's prompt-only regex (tavern.js): what is sent is
-     trimmed, what is saved and shown is not */
-  const sent = applyPromptRegex(kept, style.regex, { user: userName, char: charName });
+  /* an imported preset's prompt-only regex, then the card's (tavern.js):
+     what is sent is trimmed, what is saved and shown is not */
+  const sent = applyPromptRegex(kept, chatRegex(style, universe ? null : character, "prompt"), { user: userName, char: charName });
   const msgs = [
     { role: "system", content: sys },
     ...sent.map((m) => {
@@ -380,6 +399,21 @@ export function buildApiMessages({
     const prev = msgs[at - 1];
     if (prev.role === "user") prev.content += `\n\n${body}`;
     else msgs.splice(at, 0, { role: "user", content: body });
+  }
+
+  /* The card's note (SillyTavern's depth prompt): every turn, `depth`
+     messages up from the newest, in its role. A system note goes as a user
+     turn, like everything mid-chat here, and an assistant one only where a
+     message follows it, so it is never a prefill. */
+  for (const c of useCard && !universe ? [character, ...linked] : []) {
+    const note = depthPromptOf(c?.depthPrompt);
+    const body = note ? fill(note.prompt.trim(), c.name) : "";
+    if (!body.trim()) continue;
+    const at = Math.max(1, msgs.length - note.depth);
+    const role = note.role === "assistant" && at < msgs.length ? "assistant" : "user";
+    const prev = msgs[at - 1];
+    if (prev.role === role) prev.content += `\n\n${body}`;
+    else msgs.splice(at, 0, { role, content: body });
   }
 
   /* In-chat Author's Note: every turn, three messages up from the newest,
@@ -412,9 +446,10 @@ export function buildApiMessages({
      newest one, from those no longer resent, so nothing is sent twice. */
   let recalledNote = "";
   let recalled = recalledContext;
-  if (!recalled && settings?.ragOn && history.length > kept.length) {
-    const query = history[history.length - 1]?.content || "";
-    const gone = history.slice(0, history.length - kept.length);
+  const cut = history.length - inWindow.length;
+  if (!recalled && settings?.ragOn && cut > 0) {
+    const query = history.findLast((m) => !m.hidden)?.content || "";
+    const gone = history.slice(0, cut).filter((m) => !m.hidden);
     if (query.trim()) {
       const hits = searchRelevantContext(query, gone, { topK: 3, threshold: 0.25 });
       if (hits.length > 0) recalled = hits;

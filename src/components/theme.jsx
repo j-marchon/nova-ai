@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, FastForward, ImageIcon, Palette, Repeat2, Reply, Sparkles, X } from "lucide-react";
 import { AccBtn, Button, Modal, Segmented, Slider, ToggleRow } from "./ui.jsx";
 import { DEFAULT_THEME, bgListOf } from "../lib/data.js";
+import { BUBBLE_SCALE_MAX, BUBBLE_SCALE_MIN, normalizeBubbleScale } from "../lib/uiScale.js";
+import { Swatches } from "./color.jsx";
 import { MAX_ANIMATED_MB, readImage, snapshotFile } from "../lib/util.js";
 import { BG_BITRATE, BG_LONG_SIDE, MAX_BG_CLIP, blobToDataUrl, canEncodeVideo, encodeClip, isVideoFile, probeVideo } from "../lib/video.js";
 import { BG_MAX_ZOOM, BG_MIN_ZOOM, bgSize, useFraming } from "./framing.js";
@@ -16,7 +18,19 @@ import { ClipProgress, ClipPreview, Media, TrimBar } from "./media.jsx";
 /* Look & feel for one character or universe: bubble colours and the
    chat backdrop. Lives inside the creation flow so every story can
    carry its own mood. */
-export function ThemeSection({ theme, onChange }) {
+/* Look → Chat bubble size, in Settings and in a chat's own Look */
+export function BubbleSizeSlider({ value, onChange }) {
+  return (
+    <Slider label="Chat bubble size" value={normalizeBubbleScale(value)} min={BUBBLE_SCALE_MIN} max={BUBBLE_SCALE_MAX} step={0.05}
+      onChange={v => onChange(normalizeBubbleScale(v))}
+      fmt={v => `${Math.round(v * 100)}%`} />
+  );
+}
+
+/* bubble colours to pick from; none is the skin's own (chatAppearance.js) */
+const BUBBLE_COLORS = ["#1e3a5f", "#3b2f63", "#5b2245", "#6b2a2a", "#24503a", "#e4e4e7"];
+
+export function ThemeSection({ theme, onChange, bubbleScale, onBubbleScale }) {
   const [showBg, setShowBg] = useState(false);
   /* the saved background being framed again for this screen, by index */
   const [recrop, setRecrop] = useState(null);
@@ -44,6 +58,15 @@ export function ThemeSection({ theme, onChange }) {
       <Slider label="Bubble opacity" value={chatAppearance(t).alpha} min={0} max={1} step={0.05}
         onChange={value => set({ bubbleAlpha: value })}
         fmt={value => value === 0 ? "Invisible" : `${Math.round(value * 100)}%`} />
+
+      {[["userColor", "Your bubbles", "var(--nv-bubble-user)"], ["aiColor", "Their bubbles", "var(--nv-bubble-ai)"]].map(([key, label, skin]) => (
+        <div key={key}>
+          <p className="text-xs font-medium tracking-wide text-zinc-400 uppercase mb-2">{label}</p>
+          <Swatches options={BUBBLE_COLORS} value={t[key] || null} defaultColor={skin} size="w-7 h-7" onChange={c => set({ [key]: c })} />
+        </div>
+      ))}
+
+      {onBubbleScale && <BubbleSizeSlider value={bubbleScale} onChange={onBubbleScale} />}
 
       <div>
         <div className="flex items-baseline justify-between mb-2">
@@ -281,7 +304,7 @@ function MockName({ children, mine }) {
 export function ChatChromeMock({ theme }) {
   const t = { ...DEFAULT_THEME, ...(theme || {}) };
   const paint = chatAppearance(t);
-  const { userBubbleBg, aiBubbleBg } = paint;
+  const { userBubbleBg, aiBubbleBg, userBubbleFg, aiBubbleFg } = paint;
   const shadow = MOCK_SHADOW;
   const drop = {};
   return (
@@ -311,7 +334,7 @@ export function ChatChromeMock({ theme }) {
           <MockName>Your character</MockName>
           <div
             className="max-w-[90%] px-3.5 py-2.5 rounded-2xl rounded-tl-sm text-sm leading-relaxed text-zinc-200 border border-[var(--nv-edge-ink)]"
-            style={{ background: aiBubbleBg }}
+            style={{ background: aiBubbleBg, color: aiBubbleFg }}
           >
             <em className="opacity-75">*leans against the doorframe, watching you*</em> You took your time getting here.
           </div>
@@ -320,7 +343,7 @@ export function ChatChromeMock({ theme }) {
           <MockName mine>You</MockName>
           <div
             className="max-w-[90%] px-3.5 py-2.5 rounded-2xl rounded-tr-sm text-sm leading-relaxed text-white"
-            style={{ background: userBubbleBg, color: "var(--nv-ink)" }}
+            style={{ background: userBubbleBg, color: userBubbleFg }}
           >
             The roads were closed.
           </div>
@@ -329,7 +352,7 @@ export function ChatChromeMock({ theme }) {
           <MockName>Your character</MockName>
           <div
             className="max-w-[90%] px-3.5 py-2.5 rounded-2xl rounded-tl-sm text-sm leading-relaxed text-zinc-200 border border-[var(--nv-edge-ink)]"
-            style={{ background: aiBubbleBg }}
+            style={{ background: aiBubbleBg, color: aiBubbleFg }}
           >
             Then you'll stay until morning.
           </div>

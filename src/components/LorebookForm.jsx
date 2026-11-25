@@ -1,4 +1,5 @@
 import { MotionList } from "./motion/MotionList.jsx";
+import { Disclosure } from "./motion/Disclosure.jsx";
 import { useState } from "react";
 import { ChevronRight, Download, Plus, Trash2 } from "lucide-react";
 import { AccBtn, Button, Field, Modal, Segmented, TextArea, TextInput } from "./ui.jsx";
@@ -19,9 +20,15 @@ const keyText = (list) => (list || []).join(", ");
 const keyList = (text) => String(text || "").split(",").map((k) => k.trim()).filter(Boolean);
 
 const toDraft = (e) => ({ ...e, keysText: keyText(e.keys), secondaryText: keyText(e.secondaryKeys) });
+/* the Advanced numbers and what a blank one means */
+const ADVANCED_NUMBERS = { probability: 100, sticky: 0, cooldown: 0, delay: 0, groupWeight: 100, scanDepth: null };
+const numOr = (v, d) => (v === "" || v == null || !Number.isFinite(Number(v)) ? d : Math.max(0, Number(v)));
+
 const fromDraft = ({ keysText, secondaryText, ...e }) => {
   const secondaryKeys = keyList(secondaryText);
   const order = e.order === "" || !Number.isFinite(Number(e.order)) ? 100 : Number(e.order);
+  for (const [k, d] of Object.entries(ADVANCED_NUMBERS)) if (k in e) e[k] = numOr(e[k], d);
+  if ("probability" in e) e.probability = Math.min(100, e.probability);
   return { ...e, order, keys: keyList(keysText), secondaryKeys, selective: !!e.selective && secondaryKeys.length > 0 };
 };
 
@@ -39,12 +46,56 @@ function Switch({ on, onClick, label, hint }) {
   );
 }
 
+/* SillyTavern's finer controls (see lore.js); blank keeps the default. */
+function EntryAdvanced({ e, set }) {
+  const number = (k, label, placeholder, extra) => (
+    <Field label={label}>
+      <TextInput
+        type="number"
+        min="0"
+        inputMode="numeric"
+        value={k === "probability" && e.useProbability === false ? "" : e[k] ?? ""}
+        placeholder={placeholder}
+        onChange={(ev) => set({ [k]: ev.target.value === "" ? "" : Number(ev.target.value), ...extra })}
+      />
+    </Field>
+  );
+  return (
+    <div className="pb-1 space-y-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {number("probability", "Chance %", "100", { useProbability: true })}
+        {number("sticky", "Sticky", "0")}
+        {number("cooldown", "Cooldown", "0")}
+        {number("delay", "Delay", "0")}
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="col-span-2">
+          <Field label="Group">
+            <TextInput value={e.group || ""} onChange={(ev) => set({ group: ev.target.value })} placeholder="Comma-separated" />
+          </Field>
+        </div>
+        {number("groupWeight", "Group weight", "100")}
+        {number("scanDepth", "Scan depth", "Default")}
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Switch on={!!e.groupOverride} onClick={() => set({ groupOverride: !e.groupOverride })} label="Prioritize in group" />
+        <Switch on={!!e.useGroupScoring} onClick={() => set({ useGroupScoring: e.useGroupScoring ? null : true })} label="Group scoring" />
+        <Switch on={e.matchWholeWords !== false} onClick={() => set({ matchWholeWords: e.matchWholeWords === false ? null : false })} label="Whole words" />
+        <Switch on={!!e.excludeRecursion} onClick={() => set({ excludeRecursion: !e.excludeRecursion })} label="Not triggered by other entries" />
+        <Switch on={!!e.preventRecursion} onClick={() => set({ preventRecursion: !e.preventRecursion })} label="Doesn't trigger other entries" />
+        <Switch on={!!e.delayUntilRecursion} onClick={() => set({ delayUntilRecursion: e.delayUntilRecursion ? 0 : 1 })} label="Only triggered by other entries" />
+      </div>
+    </div>
+  );
+}
+
 export function LorebookForm({ initial, title, onSave, onClose, embeddedIn }) {
   const [book, setBook] = useState(() => {
     const b = initial || newBook();
     return { ...b, entries: (b.entries || []).map(toDraft) };
   });
   const [openId, setOpenId] = useState(null);
+  const [advanced, setAdvanced] = useState(false);
   const [err, setErr] = useState(null);
   const [exportedTo, setExportedTo] = useState(null);
 
@@ -161,6 +212,20 @@ export function LorebookForm({ initial, title, onSave, onClose, embeddedIn }) {
                         </Field>
                       </>
                     )}
+                    <div className="border-t border-[var(--nv-line)]">
+                      <button
+                        type="button"
+                        onClick={() => setAdvanced(!advanced)}
+                        aria-expanded={advanced}
+                        className="w-full min-h-11 flex items-center justify-between gap-2 text-left"
+                      >
+                        <span className="text-xs text-zinc-200">Advanced</span>
+                        <ChevronRight size={14} className="text-zinc-600 shrink-0 nv-chevron" data-angle="90" data-open={advanced ? "1" : "0"} />
+                      </button>
+                      <Disclosure open={advanced}>
+                        <div>{advanced && <EntryAdvanced e={e} set={(patch) => setEntry(e.id, patch)} />}</div>
+                      </Disclosure>
+                    </div>
                     <div className="flex items-end gap-3">
                       <Field label="Priority">
                         <TextInput

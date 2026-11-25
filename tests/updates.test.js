@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it } from "vitest";
-import { checkForUpdate, bootUpdateCheck, isNewer, parseVersion, shortVersion, RELEASES_REPO } from "../src/lib/updates.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { checkForUpdate, bootUpdateCheck, isNewer, parseVersion, shortVersion, RELEASES_REPO, installUpdate } from "../src/lib/updates.js";
 
 const reply = (body, status = 200) => async (url) => {
   reply.urls.push(url);
@@ -48,5 +48,27 @@ describe("update check", () => {
     expect(await bootUpdateCheck(true, "1.0.0", { fetchImpl: boom })).toBe(null);
     await bootUpdateCheck(true, "1.0.0", { fetchImpl: reply({ tag_name: "v1.0.1" }) });
     expect((await bootUpdateCheck(true, "1.0.0", { fetchImpl: boom }))?.latest).toBe("1.0.1");
+  });
+});
+
+describe("Update button", () => {
+  afterEach(() => { delete window.novaDesktop; delete window.Capacitor; vi.restoreAllMocks(); });
+  it("keeps only the release's own APK", async () => {
+    const assets = [{ browser_download_url: "https://evil.example/Nova.apk" }, { browser_download_url: `https://github.com/${RELEASES_REPO}/releases/download/v1.3.0/Nova-1.3.0.apk` }];
+    const r = await checkForUpdate("1.0.0", { fetchImpl: reply({ tag_name: "v1.3.0", assets }) });
+    expect(r.apk).toBe(`https://github.com/${RELEASES_REPO}/releases/download/v1.3.0/Nova-1.3.0.apk`);
+  });
+  it("installs on the desktop, sends the portable .exe to the page, and hands Android its APK", async () => {
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
+    window.novaDesktop = { update: vi.fn().mockResolvedValue({ installing: true }) };
+    expect(await installUpdate({ url: "u" })).toBeUndefined();
+    window.novaDesktop.update.mockResolvedValue({ manual: true });
+    expect(await installUpdate({ url: "u" })).toMatch(/download page/);
+    expect(open).toHaveBeenCalledWith("u", "_blank", "noopener,noreferrer");
+    delete window.novaDesktop;
+    const NovaUpdate = { addListener: vi.fn().mockResolvedValue({ remove: vi.fn() }), install: vi.fn().mockResolvedValue({}) };
+    window.Capacitor = { isNativePlatform: () => true, Plugins: { NovaUpdate } };
+    expect(await installUpdate({ url: "u", apk: "a.apk" })).toMatch(/Install/);
+    expect(NovaUpdate.install).toHaveBeenCalledWith({ url: "a.apk" });
   });
 });

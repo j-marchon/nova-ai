@@ -1,6 +1,7 @@
 import { WebUpdate } from "./components/WebUpdate.jsx";
+import { UpdateDialog } from "./components/UpdateDialog.jsx";
 import { watchKeyboard } from "./lib/keyboard.js";
-import { applyUiScale, layoutRect, layoutViewport, toLayout } from "./lib/uiScale.js";
+import { applyUiScale, normalizeBubbleScale, layoutRect, layoutViewport, toLayout } from "./lib/uiScale.js";
 import { Activity, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { enter, gsap, motionMode, set, stop, tween } from "./components/motion/runtime.js";
@@ -15,8 +16,8 @@ import { Toasts } from "./components/Toasts.jsx";
 import { ActivityIsland } from "./components/ActivityIsland.jsx";
 import { requestActivityOpen } from "./lib/activity.js";
 import { showToast } from "./lib/toast.js";
-import { RELEASES_PAGE, bootUpdateCheck, shortVersion } from "./lib/updates.js";
-import { Button, ChatSkeleton, Modal, NovaMark, useNeedsSetup, PageSkeleton, ScreenSkeleton, topModal } from "./components/ui.jsx";
+import { bootUpdateCheck, installUpdate, shortVersion } from "./lib/updates.js";
+import { ChatSkeleton, NovaMark, useNeedsSetup, PageSkeleton, ScreenSkeleton, topModal } from "./components/ui.jsx";
 import { findBridgeOnce, pageHost } from "./lib/bridgeFind.js";
 import { activeProvider, patchProvider } from "./lib/providers.js";
 import { saveFile, fillNames } from "./lib/cards.js";
@@ -697,21 +698,19 @@ function Nova({ data, setData }) {
       style={{
         "--acc": light ? "#000" : "#fff",
         "--on-acc": light ? "#fff" : "#000",
+        "--nv-bubble-scale": normalizeBubbleScale(ap.bubbleScale),
       }}
     >
       <WebUpdate prepare={async () => {
         do { await save(unsaved.current || data); } while (unsaved.current);
       }} />
       {updateNotice && (
-        <Modal title="Update available" onClose={() => setUpdateNotice(null)}>
-          <div className="space-y-4">
-            <p className="text-sm text-zinc-200">Nova {updateNotice.latest} is out · this is Nova {shortVersion(version)}</p>
-            <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setUpdateNotice(null)}>Later</Button>
-              <Button variant="primary" onClick={() => { window.open(updateNotice.url || RELEASES_PAGE, "_blank", "noopener,noreferrer"); setUpdateNotice(null); }}>Get it</Button>
-            </div>
-          </div>
-        </Modal>
+        <UpdateDialog
+          detail={`Nova ${updateNotice.latest} · you have ${shortVersion(version)}`}
+          prepare={async () => { do { await save(unsaved.current || data); } while (unsaved.current); }}
+          onLater={() => setUpdateNotice(null)}
+          install={(onProgress) => installUpdate(updateNotice, onProgress)}
+        />
       )}
       {saveError && <div role="alert" className="fixed top-0 inset-x-0 z-[9999] p-4 bg-zinc-900 text-white">
         Changes not saved. Keep this tab open until you retry or export a backup.

@@ -13,6 +13,12 @@ import { uid } from "./util.js";
 
 const stDate = (ms) => new Date(ms || Date.now()).toISOString();
 
+/* A reply's thinking, the way SillyTavern keeps it in `extra` */
+const thoughtOut = (v) => (v?.reasoning ? { reasoning: v.reasoning, ...(v.reasoningMs ? { reasoning_duration: v.reasoningMs } : {}) } : {});
+const thoughtIn = (x) => (typeof x?.reasoning === "string" && x.reasoning.trim()
+  ? { reasoning: x.reasoning, ...(Number(x.reasoning_duration) > 0 ? { reasoningMs: Number(x.reasoning_duration) } : {}) }
+  : {});
+
 /* `names`: { user, char } as the chat shows them */
 export function chatToJsonl(chat, { user = "You", char = "Character" } = {}) {
   const head = {
@@ -24,19 +30,28 @@ export function chatToJsonl(chat, { user = "You", char = "Character" } = {}) {
   const lines = (chat.messages || []).map((m) => {
     const isUser = m.role === "user";
     const isSystem = m.role === "system";
-    const swipes = swipeList(m).map((x) => x.text);
+    const versions = swipeList(m);
+    const swipes = versions.map((x) => x.text);
     const extra = {
       ...(m.images?.length ? { nova_images: m.images } : {}),
       ...(m.image ? { image: m.image } : {}),
       ...(m.speakerId ? { nova_speaker_id: m.speakerId } : {}),
+      ...(isSystem ? { type: "narrator" } : {}),
+      ...(m.hidden ? { nova_hidden: true } : {}),
+      ...thoughtOut(m),
     };
     return {
       name: isUser ? user : m.speaker || (isSystem ? "Narrator" : char),
       is_user: isUser,
-      is_system: isSystem,
+      /* SillyTavern leaves an is_system message out of the prompt */
+      is_system: isSystem || !!m.hidden,
       send_date: stDate(m.at),
       mes: m.content || "",
-      ...(swipes.length > 1 ? { swipes, swipe_id: Math.max(0, Math.min(swipes.length - 1, m.swipeIdx ?? swipes.length - 1)) } : {}),
+      ...(swipes.length > 1 ? {
+        swipes,
+        swipe_id: Math.max(0, Math.min(swipes.length - 1, m.swipeIdx ?? swipes.length - 1)),
+        swipe_info: versions.map((v) => ({ send_date: stDate(m.at), extra: thoughtOut(v) })),
+      } : {}),
       extra,
     };
   });
@@ -60,22 +75,34 @@ export function readChatJsonl(text) {
   const characterName = String(head.character_name || msgs.find((r) => !r.is_user && !r.is_system)?.name || "").trim();
   const userName = String(head.user_name || msgs.find((r) => r.is_user)?.name || "").trim();
 
+  /* SillyTavern marks a message left out of the prompt is_system; Nova's own
+     files mark their narration so too (with type "narrator" since hidden
+     messages came in, and with nothing before that) */
+  const fromNova = !!head.chat_metadata?.nova;
   const messages = msgs.map((r) => {
-    const role = r.is_user ? "user" : r.is_system ? "system" : "assistant";
+    const extra = r.extra && typeof r.extra === "object" ? r.extra : {};
+    const role = r.is_user ? "user"
+      : extra.type === "narrator" || (r.is_system && fromNova && !extra.nova_hidden) ? "system"
+      : "assistant";
+    const hidden = !!extra.nova_hidden || (!!r.is_system && !(fromNova && role === "system"));
     const at = Date.parse(r.send_date) || Date.now();
     const swipes = Array.isArray(r.swipes) ? r.swipes.filter((x) => typeof x === "string") : [];
     const idx = Number.isInteger(r.swipe_id) ? Math.max(0, Math.min(swipes.length - 1, r.swipe_id)) : swipes.length - 1;
     const content = String(swipes.length > 1 ? swipes[idx] : r.mes ?? "");
     const name = String(r.name || "").trim();
-    const extra = r.extra && typeof r.extra === "object" ? r.extra : {};
+    const info = Array.isArray(r.swipe_info) ? r.swipe_info : [];
+    /* each version's thinking; the shown one's may only be on the message */
+    const thoughtAt = (i) => thoughtIn(info[i]?.extra?.reasoning ? info[i].extra : i === idx ? extra : null);
+    const versions = swipes.map((t, i) => ({ text: t, ...thoughtAt(i) }));
     return {
       id: uid(),
       role,
       content,
       at,
+      ...(hidden ? { hidden: true } : {}),
       ...(role === "assistant" && name && name !== characterName ? { speaker: name } : {}),
       ...(role === "system" && name ? { speaker: name } : {}),
-      ...(swipes.length > 1 ? { swipes: swipes.map((t) => ({ text: t })), swipeIdx: idx } : {}),
+      ...(swipes.length > 1 ? { swipes: versions, swipeIdx: idx, ...thoughtAt(idx) } : thoughtIn(extra)),
       ...(Array.isArray(extra.nova_images) && extra.nova_images.length ? { images: extra.nova_images } : {}),
       ...(typeof extra.image === "string" && extra.image ? { image: extra.image } : {}),
       ...(extra.nova_speaker_id ? { speakerId: extra.nova_speaker_id } : {}),

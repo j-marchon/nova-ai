@@ -1,7 +1,7 @@
 import { CyclingAvatar } from "../../components/CyclingAvatar.jsx";
 import { enter, respond } from "../../components/motion/runtime.js";
-import { memo, useMemo, useRef, useLayoutEffect } from "react";
-import { ChevronLeft, ChevronRight, FastForward, Languages, MoreHorizontal, Pencil, Play, RefreshCw, Trash2, Wand2, X } from "lucide-react";
+import { memo, useMemo, useRef, useLayoutEffect, useState } from "react";
+import { ChevronDown, ChevronLeft, ChevronRight, EyeOff, FastForward, Languages, MoreHorizontal, Pencil, Play, RefreshCw, Trash2, Wand2, X } from "lucide-react";
 import { RP } from "../../components/RP.jsx";
 import { Button, Pic, Skeleton } from "../../components/ui.jsx";
 import { short } from "../../lib/api.js";
@@ -30,6 +30,36 @@ function LiveRow(props) {
   const content = live ? joinContinuation(props.m.content, live) : props.m.content;
   const m = useMemo(() => (content === props.m.content ? props.m : { ...props.m, content }), [props.m, content]);
   return <RowBody {...props} m={m} />;
+}
+
+/* A reply's kept thinking, closed by default: the streaming bubble's
+   thinking row, still. A preset's display scripts for SillyTavern
+   placement 6 restyle it (html.js). Its own taps never reach the bubble.
+   Faint by opacity, since a bubble's text takes the bubble's colour. */
+function Thought({ m, display, depth }) {
+  const [open, setOpen] = useState(false);
+  const secs = m.reasoningMs ? Math.max(1, Math.round(m.reasoningMs / 1000)) : 0;
+  return (
+    <div className="mb-1">
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}
+        aria-expanded={open}
+        className="inline-flex gap-1.5 items-center py-1"
+        style={{ opacity: .6 }}
+      >
+        <span className="text-[11px]">{secs ? `Thought for ${secs}s` : "Thinking"}</span>
+        <ChevronDown size={12} className="nv-chevron" data-open={open ? "1" : "0"} />
+      </button>
+      {open && (
+        <div className="nv-fade mt-1.5 mb-1">
+          <div className="max-h-60 overflow-y-auto text-xs italic border-l-2 pl-2.5" style={{ opacity: .6, borderColor: "currentColor" }}>
+            <RP text={m.reasoning} display={display} role="reasoning" depth={depth} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export const MessageRow = memo(function MessageRow(props) {
@@ -124,6 +154,11 @@ function RowBody({
         {/* how long ago in the story (the phone's clock), while the phone is on */}
         {when && <span className="nv-label leading-none" style={{ fontSize: 9.5 }} data-wt="">{when}</span>}
         {speaking && <span aria-label="Reading aloud" className="nv-breathe w-1.5 h-1.5 rounded-full bg-[var(--nv-ink)]" />}
+        {m.hidden && (
+          <span role="img" aria-label="Hidden from AI" title="Hidden from AI" className="text-[var(--nv-faint)]" data-hidden-mark="">
+            <EyeOff size={11} />
+          </span>
+        )}
         {m.via && (
           <span
             title={`Written by ${m.via}, not the selected model`}
@@ -141,7 +176,7 @@ function RowBody({
         )}
       </div>
       <div className={`w-full max-w-full min-w-0 flex flex-col ${m.role === "user" ? "items-end" : "items-start"}`}>
-        <div className={`nv-bubble-box relative max-w-full min-w-0 ${editing ? "w-full" : ""}`}>
+        <div className={`nv-bubble-box relative max-w-full min-w-0 ${editing ? "w-full" : ""}`} style={m.hidden && !editing ? { opacity: .5 } : undefined}>
           {editing ? (
             /* The same bubble, made editable in place: same padding, radius,
                type and width, so every word stays exactly where it was. */
@@ -159,6 +194,7 @@ function RowBody({
                 <MessageImages images={m.images} onPreview={preview} />
               )}
               {m.image && <MessageImages images={[m.image]} onPreview={preview} />}
+              {m.reasoning && <Thought m={m} display={look.display} depth={depth} />}
               {m.content ? <RP text={m.content} display={look.display} role={m.role} depth={depth} /> : null}
             </div>
           )}
@@ -245,9 +281,15 @@ function RowBody({
                   aria-label="Previous version"
                 />
                 {versions > 1 && (
-                  <span className="text-[11px] text-zinc-400 tabular-nums min-w-8 text-center">
+                  <button
+                    type="button"
+                    onClick={() => actions.showVersions(m)}
+                    className="text-[11px] text-zinc-400 hover:text-zinc-100 tabular-nums min-w-8 h-8 px-1 text-center rounded-lg"
+                    aria-label={`Version ${swipeIndex(m) + 1} of ${versions}. All versions`}
+                    title="All versions"
+                  >
                     {swipeIndex(m) + 1}/{versions}
-                  </span>
+                  </button>
                 )}
                 <Button
                   variant="icon"

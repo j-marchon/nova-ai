@@ -104,6 +104,17 @@ export function CreatePage({ data, update, onEdit, startChat, startGroupChat, op
       ].filter(Boolean).join(" "),
       bad: bad.length > 0,
     });
+    const scripted = ok.filter((c) => c.regexScripts?.some((x) => !x.disabled));
+    if (scripted.length) setRegexAsk(scripted);
+  };
+  /* Cards with regex scripts: asked once. Skip keeps them, switched off,
+     in the character's editor. */
+  const [regexAsk, setRegexAsk] = useState(null);
+  const scriptCount = (c) => `${c.regexScripts.length} regex script${c.regexScripts.length === 1 ? "" : "s"}`;
+  const keepRegex = (keep) => {
+    const ids = new Set(regexAsk.map((c) => c.id));
+    if (!keep) update((d) => ({ ...d, characters: d.characters.map((c) => (ids.has(c.id) ? { ...c, regexScripts: (c.regexScripts || []).map((x) => ({ ...x, disabled: true })) } : c)) }));
+    setRegexAsk(null);
   };
   const [picking, setPicking] = useState(null);   // { kind, item }
   const [deleting, setDeleting] = useState(null); // { kind, item }
@@ -271,7 +282,7 @@ export function CreatePage({ data, update, onEdit, startChat, startGroupChat, op
                   <input
                     ref={fileRef}
                     type="file"
-                    accept=".png,.json,image/png,application/json"
+                    accept=".png,.json,.charx,image/png,application/json"
                     multiple
                     className="hidden"
                     onChange={(e) => { const f = [...(e.target.files || [])]; e.target.value = ""; if (f.length) importFiles(f); }}
@@ -426,6 +437,22 @@ export function CreatePage({ data, update, onEdit, startChat, startGroupChat, op
           />
         );
       })()}
+
+      {regexAsk && (
+        <Modal title="Regex scripts" onClose={() => keepRegex(false)}>
+          {regexAsk.length === 1 ? (
+            <p className="text-sm text-zinc-300">This card has {scriptCount(regexAsk[0])}.</p>
+          ) : (
+            <ul className="text-sm text-zinc-300 space-y-1">
+              {regexAsk.map((c) => <li key={c.id}>{c.name} · {scriptCount(c)}</li>)}
+            </ul>
+          )}
+          <div className="flex items-center gap-2 mt-5">
+            <Button onClick={() => keepRegex(false)} className="flex-1">Skip</Button>
+            <AccBtn onClick={() => keepRegex(true)} className="flex-1">Keep</AccBtn>
+          </div>
+        </Modal>
+      )}
 
       {deleting && (
         <Modal

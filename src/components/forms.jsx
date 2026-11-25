@@ -4,7 +4,7 @@ import { BookMarked, ChevronLeft, ChevronRight, Download, ImageIcon, MapPin, Plu
 import { LorebookForm } from "./LorebookForm.jsx";
 import { AiFill } from "./AiFill.jsx";
 import { ThemeSection } from "./theme.jsx";
-import { AccBtn, Avatar, Button, Field, Modal, Segmented, TextArea, TextInput, Toggle } from "./ui.jsx";
+import { AccBtn, Avatar, Button, Field, Modal, Segmented, TextArea, TextInput, Toggle, inputCls } from "./ui.jsx";
 import { AvatarPicker, useAvatarFile } from "./clip.jsx";
 import { characterCardJson, characterCardPng, fileSafe, saveFile } from "../lib/cards.js";
 import { DEFAULT_THEME, greetingsOf, packGreetings } from "../lib/data.js";
@@ -248,6 +248,7 @@ export function CharacterForm({ initial, settings, onSave, onSettings, onClose, 
   const [advanced, setAdvanced] = useState(false);
   const [cardTab, setCardTab] = useState("details");
   const set = (k, v) => setF((p) => ({ ...p, [k]: v }));
+  const setNote = (patch) => setF((p) => ({ ...p, depthPrompt: { depth: 4, role: "system", ...p.depthPrompt, ...patch } }));
   useReportDirty(f, dirtyRef);
   const description = profileText(DESCRIPTION, f.description);
   const personality = profileText(PERSONALITY, f.personality);
@@ -388,14 +389,41 @@ export function CharacterForm({ initial, settings, onSave, onSettings, onClose, 
               />
             </Fold>
             {/* The card author's own instructions. Usually filled by an import. */}
-            <Fold title="Card instructions" status={f.systemPrompt || f.postHistoryInstructions ? "Set" : "None"}>
+            <Fold title="Card instructions" status={f.systemPrompt || f.postHistoryInstructions || f.depthPrompt?.prompt ? "Set" : "None"}>
               <Field label="System prompt">
                 <TextArea rows={4} value={f.systemPrompt || ""} onChange={(e) => set("systemPrompt", e.target.value)} />
               </Field>
               <Field label="Post-history instructions">
                 <TextArea rows={3} value={f.postHistoryInstructions || ""} onChange={(e) => set("postHistoryInstructions", e.target.value)} />
               </Field>
+              <Field label="Character's note">
+                <TextArea rows={3} value={f.depthPrompt?.prompt || ""} onChange={(e) => setNote({ prompt: e.target.value })} />
+              </Field>
+              {f.depthPrompt?.prompt?.trim() && (
+                <div className="flex items-end gap-3">
+                  <div className="w-24 shrink-0">
+                    <Field label="Depth">
+                      <TextInput type="number" min={0} inputMode="numeric" value={f.depthPrompt.depth ?? 4}
+                        onChange={(e) => setNote({ depth: e.target.value === "" ? "" : Number(e.target.value) })} />
+                    </Field>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <Field label="Role">
+                      <select value={f.depthPrompt.role || "system"} onChange={(e) => setNote({ role: e.target.value })} className={inputCls + " cursor-pointer"}>
+                        <option value="system">System</option>
+                        <option value="user">User</option>
+                        <option value="assistant">Assistant</option>
+                      </select>
+                    </Field>
+                  </div>
+                </div>
+              )}
             </Fold>
+            <RegexList
+              items={(f.regexScripts || []).map((x, i) => ({ i, name: x.scriptName || "Regex", kind: x.markdownOnly ? "shown" : x.promptOnly ? "sent" : "saved", off: !!x.disabled }))}
+              onToggle={(x) => set("regexScripts", f.regexScripts.map((s, j) => (j === x.i ? { ...s, disabled: !s.disabled } : s)))}
+              onRemove={(x) => set("regexScripts", f.regexScripts.filter((_, j) => j !== x.i))}
+            />
             {/* Emotion Sprites */}
             <Fold title="Emotion Sprites" status={Object.values(f.sprites || {}).filter(Boolean).length ? `${Object.values(f.sprites || {}).filter(Boolean).length} set` : "None"}>
               <EmotionSpritesEditor sprites={f.sprites} onChange={(s) => set("sprites", s)} />
@@ -464,6 +492,30 @@ function Fold({ title, status, start = false, children }) {
         </div>
       </Disclosure>
     </div>
+  );
+}
+
+/* Regex scripts as one folded list: name, where it acts, a switch, remove.
+   items: [{ name, kind: "sent" | "shown" | "saved", off }]; a switched-off
+   script is kept but not run. */
+export function RegexList({ items, onToggle, onRemove }) {
+  if (!items.length) return null;
+  const off = items.filter((x) => x.off).length;
+  return (
+    <Fold title="Regex scripts" status={off ? `${items.length} · ${off} off` : String(items.length)}>
+      <ul className="-my-1">
+        {items.map((x, i) => (
+          <li key={`${x.kind}${i}`} className="flex items-center gap-2 min-h-11">
+            <span className={`text-sm truncate min-w-0 flex-1 ${x.off ? "text-zinc-500" : "text-zinc-200"}`}>{x.name}</span>
+            <span className="text-[10px] text-zinc-600 shrink-0">{x.kind}</span>
+            <button type="button" role="switch" aria-checked={!x.off} aria-label={x.name} onClick={() => onToggle(x)} className="p-1.5 rounded-full shrink-0">
+              <Toggle on={!x.off} />
+            </button>
+            <Button type="button" variant="icon" size="sm" icon={Trash2} onClick={() => onRemove(x)} aria-label={`Remove ${x.name}`} />
+          </li>
+        ))}
+      </ul>
+    </Fold>
   );
 }
 

@@ -2,6 +2,8 @@ import { DEFAULT_THEME, greetingsOf } from "./data.js";
 import { readImage, uid } from "./util.js";
 import { isVideo, videoStill } from "./video.js";
 import { bookFrom, toCharacterBook } from "./lore.js";
+import { unzipSync } from "fflate";
+import { depthPromptOf } from "./tavern.js";
 
 /* ---------- character cards: import and export ----------
 
@@ -148,6 +150,11 @@ export function cardFields(json) {
     greetingLabels: Array.isArray(d.extensions?.nova?.greetingLabels) ? d.extensions.nova.greetingLabels.map(s) : [],
     tags: Array.isArray(d.tags) ? d.tags.filter((t) => typeof t === "string") : [],
     sprites: (d.sprites && typeof d.sprites === "object") ? d.sprites : (d.extensions?.sprites && typeof d.extensions.sprites === "object") ? d.extensions.sprites : {},
+    depthPrompt: depthPromptOf(d.extensions?.depth_prompt),
+    /* SillyTavern regex scripts, kept as they are so they go back out whole */
+    regexScripts: Array.isArray(d.extensions?.regex_scripts)
+      ? d.extensions.regex_scripts.filter((x) => x && typeof x === "object" && typeof x.findRegex === "string")
+      : [],
   };
 }
 
@@ -210,6 +217,8 @@ export function characterFromCard(fields, avatar, source, background) {
     systemPrompt: macros(f.system_prompt).trim(),
     postHistoryInstructions: macros(f.post_history_instructions).trim(),
     ...(lorebook ? { lorebook } : {}),
+    ...(f.depthPrompt ? { depthPrompt: { ...f.depthPrompt, prompt: macros(f.depthPrompt.prompt).trim() } } : {}),
+    ...(f.regexScripts?.length ? { regexScripts: f.regexScripts } : {}),
     sprites: f.sprites && typeof f.sprites === "object" ? f.sprites : {},
     avatar: avatar || "",
     theme: { ...DEFAULT_THEME, ...(background ? { bgs: [importedBackground(background)] } : {}) },
@@ -225,14 +234,44 @@ export function characterFromCard(fields, avatar, source, background) {
    (220px), because the big card view shows them at close to full width. */
 export const CARD_AVATAR_PX = 640;
 
-/* One file from the picker: a PNG card or a JSON card. */
+/* A CharX file (RisuAI, SillyTavern): a zip holding card.json, a V3 card,
+   and its pictures, named in data.assets by an embeded:// address (Risu's
+   spelling). The main "icon" asset is the avatar. Only those two entries
+   are unpacked. */
+const EMBEDDED = /^(?:embedd?ed:\/\/|__asset:)/i;
+const IMAGE_TYPES = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", jfif: "image/jpeg", webp: "image/webp", gif: "image/gif", apng: "image/apng", avif: "image/avif", bmp: "image/bmp" };
+const zipPath = (p) => p.replace(/\\/g, "/").replace(/^\.?\/+/, "");
+export function readCharx(bytes) {
+  let entry;
+  try { entry = unzipSync(bytes, { filter: (f) => zipPath(f.name) === "card.json" })["card.json"]; } catch { entry = null; }
+  if (!entry) throw new Error("no card.json in it");
+  const json = JSON.parse(unutf8.decode(entry));
+  const icons = (Array.isArray(json?.data?.assets) ? json.data.assets : [])
+    .filter((a) => String(a?.type).toLowerCase() === "icon" && EMBEDDED.test(String(a.uri || "")))
+    .map((a) => ({ name: String(a.name || ""), path: zipPath(String(a.uri).replace(EMBEDDED, "")), ext: String(a.ext || "").toLowerCase().replace(/^\./, "") }))
+    .map((a) => ({ ...a, ext: a.ext || a.path.split(".").pop().toLowerCase() }))
+    .filter((a) => IMAGE_TYPES[a.ext]);
+  const icon = icons.find((a) => a.name.toLowerCase() === "main") || icons[0];
+  const picture = icon ? Object.values(unzipSync(bytes, { filter: (f) => zipPath(f.name) === icon.path }))[0] : null;
+  return { json, image: picture ? new Blob([picture], { type: IMAGE_TYPES[icon.ext] }) : null };
+}
+
+/* One file from the picker: a PNG card, a JSON card or a CharX. */
 export async function importCardFile(file) {
   const bytes = new Uint8Array(await file.arrayBuffer());
   const isPng = bytes[0] === 0x89 && bytes[1] === 0x50;
   let json;
   let avatar = "";
   let background = "";
-  if (isPng) {
+  if (bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 3 && bytes[3] === 4) {
+    let image;
+    try { ({ json, image } = readCharx(bytes)); }
+    catch (e) { throw new Error(`${file.name} is a zip, but not a CharX card (${e.message}).`); }
+    if (image) {
+      avatar = await readImage(image, CARD_AVATAR_PX, 0.85).then((r) => r.data, () => "");
+      background = await readImage(image, IMPORT_BG_PX, 0.85).then((r) => r.data, () => "");
+    }
+  } else if (isPng) {
     const text = pngTextChunks(bytes);
     const raw = text.ccv3 || text.chara;
     if (!raw) throw new Error(`${file.name} is an image, but not a character card.`);
@@ -242,7 +281,7 @@ export async function importCardFile(file) {
     background = await readImage(file, IMPORT_BG_PX, 0.85).then((r) => r.data, () => "");
   } else {
     try { json = JSON.parse(unutf8.decode(bytes)); }
-    catch { throw new Error(`${file.name} is not a PNG or JSON character card.`); }
+    catch { throw new Error(`${file.name} is not a PNG, JSON or CharX character card.`); }
   }
   const fields = cardFields(json);
   if (!fields.name && !fields.description && !fields.first_mes) throw new Error(`${file.name} has no character in it.`);
@@ -280,6 +319,8 @@ export function characterCardJson(ch) {
         ...(ch.extensions || {}),
         ...(Object.keys(nova).length ? { nova } : {}),
         ...(ch.sprites && Object.keys(ch.sprites).length ? { sprites: ch.sprites } : {}),
+        ...(depthPromptOf(ch.depthPrompt) ? { depth_prompt: depthPromptOf(ch.depthPrompt) } : {}),
+        ...(ch.regexScripts?.length ? { regex_scripts: ch.regexScripts } : {}),
       },
     },
   };

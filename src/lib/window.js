@@ -35,13 +35,17 @@ export const MSG_OVERHEAD = 4;
    instead of every turn. */
 export const CUT_STEP = 20;
 
+/* What one message costs the window. A message hidden from the AI is never
+   sent, so it costs nothing (the prompt leaves it out after the cut). */
+export const msgTokens = (m) => (m?.hidden ? 0 : estTokens(m?.content) + MSG_OVERHEAD);
+
 /* Where the window starts: how many of the oldest messages are left out.
    Zero while everything fits. */
 export function historyCut(history, budget) {
   const MIN_KEEP = 4;
   if (history.length <= MIN_KEEP) return 0;
 
-  const tok = history.map((m) => estTokens(m.content) + MSG_OVERHEAD);
+  const tok = history.map(msgTokens);
   let total = tok.reduce((a, b) => a + b, 0);
   if (total <= budget) return 0;
 
@@ -67,6 +71,6 @@ export function trimHistory(history, budget, covered = Infinity) {
   const cut = historyCut(history, budget);
   if (cut <= covered) return history.slice(cut);
   const kept = history.slice(covered);
-  const size = kept.reduce((n, m) => n + estTokens(m.content) + MSG_OVERHEAD, 0);
+  const size = kept.reduce((n, m) => n + msgTokens(m), 0);
   return size > budget * 2 ? history.slice(cut) : kept;
 }

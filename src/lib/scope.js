@@ -242,7 +242,7 @@ export function mentionsOf(messages, name, { limit = 14, chars = 700 } = {}) {
   const k = firstOf(name);
   const re = new RegExp(`\\b${k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
   return (messages || [])
-    .filter((m) => re.test(m.content || ""))
+    .filter((m) => !m.hidden && re.test(m.content || ""))
     .slice(-limit)
     .map((m) => String(m.content).slice(0, chars));
 }

@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.3.0] — 2026-11-25
+
+### Updates
+- **Update in one tap** — "A new update is available" offers Later or Update. The Windows installer, the AppImage and the .deb download the new version and restart into it (the .deb asks for your password once); Android downloads it and opens the installer; the web app saves and reloads. The portable .exe opens the download page.
+- **Nova's icon on Windows** — Nova.exe carries Nova's icon and name, so the Start menu, the taskbar and the Nova Bridge shortcut no longer show Electron's.
+
+### Look
+- **UI size** — on the desktop app 100% is now a size larger than before (the old 125%); a size you picked is kept as it looked.
+- **Chat bubble size** — a slider for the text in chat bubbles, in Settings → Look and in a chat's own Look.
+- **Bubble colours are back** — pick the colour of your bubbles and theirs per character or world, from presets or anywhere on the colour wheel; the text stays readable on it. Untouched, every skin keeps its own colours.
+
+### Chat
+- **Hide from AI** — a message stays in the chat but is no longer sent to the model.
+- **Thinking kept** — a reply's reasoning is saved under a "Thought for Ns" row.
+- **Versions** — a sheet to browse every version of a message.
+
+### Lorebooks
+- SillyTavern's entry options: recursion (with a Recursive scan switch in Settings → Memory), trigger chance, sticky, cooldown and delay, inclusion groups, per-entry scan depth and whole-word matching.
+
+### Characters & Reply Styles
+- **Character's note** on cards, **card regex** (keep or skip on import) and **CharX** import.
+- **Regex lists** with on/off switches in reply styles; a regex file can be dropped onto a style.
+- More samplers: XTC, typical P, TFS, smoothing and top n sigma.
+- **SillyTavern presets run as they do in SillyTavern** — block macros (`{{if}}`, `{{trim}}`, scoped macros), the newer macros and variable shorthands, and regex scripts with SillyTavern's pattern, macro and trim rules.
+
+### Nova Bridge
+- **One-click sign-ins** — Antigravity and ChatGPT use a signed-in agy or Codex CLI straight away, or open a sign-in page; Gemini retries with a fresh browser sign-in when a saved one has expired.
+- **Exact model lists** — every sign-in lists only the models its account can use right now.
+- **Linux** — the .deb installs secret-tool, which the Bridge needs to find an Antigravity sign-in.
+
 ## [1.2.0] — 2026-11-25
 
 ### Desktop
