@@ -27,6 +27,7 @@ public class NovaIconPlugin extends Plugin {
         { "nova", ".MainActivity" },
         { "minimal", ".IconMinimal" },
         { "aero", ".IconAero" },
+        { "holo", ".IconHolo" },
     };
     private static final String PREFS = "nova-icon";
 

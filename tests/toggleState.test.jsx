@@ -101,7 +101,7 @@ describe("selected state is exposed and styled", () => {
   it("Skin tiles: the worn skin is checked; Look has no background, surface or preset options", async () => {
     await mount(<AppearancePanel ap={{ skin: "minimal" }} onChange={() => {}} />);
     const tiles = [...document.body.querySelectorAll('[role="radiogroup"][aria-label="Skin"] [role="radio"]')];
-    expect(tiles.map((t) => t.textContent.match(/^(Nova|Minimal|Aero)/)?.[1])).toEqual(["Nova", "Minimal", "Aero"]);
+    expect(tiles.map((t) => t.textContent.match(/^(Nova|Minimal|Aero|Holo)/)?.[1])).toEqual(["Nova", "Minimal", "Aero", "Holo"]);
     expect(tiles.find((t) => t.textContent.startsWith("Minimal")).getAttribute("aria-checked")).toBe("true");
     expect(document.body.textContent).not.toMatch(/Background opacity|Grid and grain|Appearance preset|Add skin from file/);
   });

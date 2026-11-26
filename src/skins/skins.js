@@ -50,12 +50,13 @@ export const isBuiltInSkin = (id) => !!builtIn(id);
 export const SUPPORT_URL = "https://ko-fi.com/bjmar";
 export const SUPPORTER_SKINS = [
   { id: "aero", name: "Aero", note: "Supporter skin", thumb: "skins/aero.webp", loop: "skins/aero-loop.webp", swatch: "linear-gradient(180deg, oklch(0.83 0.08 235), oklch(0.97 0.02 215) 58%, oklch(0.84 0.09 225))", locked: true },
+  { id: "holo", name: "Holo", note: "Supporter skin", thumb: "skins/holo.webp", loop: "skins/holo-loop.webp", swatch: "conic-gradient(from 200deg at 55% 50%, oklch(0.3 0.08 240), oklch(0.55 0.15 200), oklch(0.85 0.1 90), oklch(0.45 0.17 300), oklch(0.3 0.08 240))", locked: true },
 ];
 
 /* A skin's picture in Look → Skin: { still, loop } or null. Nova's and the
    supporter skins' come with the app (public/skins/, made by
    from their first scene: Ignition, Skylight
-   Arcade), the same picture whether or not the skin is on this device; any
+   Arcade, Prism Fold), the same picture whether or not the skin is on this device; any
    other pack shows its first scene's still once it has loaded. `rev` as
    for sceneSetOf. */
 const APP_ROOT = () => import.meta.env?.BASE_URL || "/";

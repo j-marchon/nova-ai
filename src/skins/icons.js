@@ -11,7 +11,7 @@
    tab's icon. */
 import { canWear, isBuiltInSkin, skinOf } from "./skins.js";
 
-export const SKIN_ICONS = ["nova", "minimal", "aero"];
+export const SKIN_ICONS = ["nova", "minimal", "aero", "holo"];
 export const iconFor = (skin) => (SKIN_ICONS.includes(skin) ? skin : "nova");
 
 /* the icons this device may pick */

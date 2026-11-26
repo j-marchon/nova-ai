@@ -173,7 +173,7 @@ function startBridge() {
    folder with the skin's icon, which take their place; Nova's own icon
    removes the copies. Icons live inside the app's archive, so the one in
    use is copied out where the desktop can read it. */
-const SKIN_ICONS = ["nova", "minimal", "aero"];
+const SKIN_ICONS = ["nova", "minimal", "aero", "holo"];
 const ENTRIES = ["nova.desktop", "nova-bridge.desktop"];
 function skinIcon(skin, window) {
   const id = SKIN_ICONS.includes(skin) ? skin : "nova";
