@@ -13,6 +13,7 @@ export const OFFICIAL_SKINS = {
   holo: [
     "88c8292d21344242772c1b1b8112758aa28e17ce701548c9ae9666979266097e", // Nova-Holo-skin-1.0.0.zip
     "9fee46df4392b1c953258ab22f9e6105b71f5cc3a0d4d8e9df645caf1bbc7006", // Nova-Holo-skin-1.0.0.zip as built from skins/holo
+    "d48bca3b4737c175ecf1e4cf6bdf62766faf2267884f24c2ec2bc7aad0506130", // Nova-Holo-skin-1.0.0.zip: live Prism Fold, Cobalt Current in both modes (the 1.3.1 release build)
   ],
 };
 

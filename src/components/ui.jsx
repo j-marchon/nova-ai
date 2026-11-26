@@ -198,7 +198,9 @@ export function useBackLayer(onBack, el) {
    tabs never resizes or moves it (the content scrolls inside). */
 /* `fill`: a full-screen form that uses a desktop's width (its content lays
    itself out in columns from lg up); otherwise it keeps a reading measure. */
-export function Modal({ title, onClose, children, wide = false, screen = false, fill = false, fixed = false, action }) {
+/* `scrimCloses` false: a tap beside the sheet does nothing (the update
+   dialog, which a stray tap used to dismiss before it was even read) */
+export function Modal({ title, onClose, children, wide = false, screen = false, fill = false, fixed = false, action, scrimCloses = true }) {
   const self = useRef({});
   const previousFocus = useRef(null);
   const parent = useContext(ModalParent);
@@ -490,7 +492,7 @@ export function Modal({ title, onClose, children, wide = false, screen = false, 
     </div>
   ) : (
     <div className={`nv-kb nv-safe-x fixed inset-0 z-50 flex items-end justify-center ${full ? "" : "sm:items-center"}`} style={full ? undefined : { paddingTop: "var(--sa-t)" }}>
-      <div className="nv-scrim nv-fade absolute inset-0" data-closing={c} style={{ background: "var(--nv-scrim)" }} onClick={shut} />
+      <div className="nv-scrim nv-fade absolute inset-0" data-closing={c} style={{ background: "var(--nv-scrim)" }} onClick={scrimCloses ? shut : undefined} />
       <div
         ref={sheetRef}
         role="dialog" aria-modal="true" aria-label={title} tabIndex={-1}

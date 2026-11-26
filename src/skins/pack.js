@@ -25,8 +25,8 @@ import { unzipSync, strFromU8 } from "fflate";
    */
 
 export const SKIN_API = 1;
-export const MAX_ZIP_BYTES = 12 * 1024 * 1024;
-const MAX_TOTAL = 24 * 1024 * 1024;
+export const MAX_ZIP_BYTES = 32 * 1024 * 1024;
+const MAX_TOTAL = 72 * 1024 * 1024;
 const MAX_FILES = 200;
 const MAX_FILE = 8 * 1024 * 1024;
 const MAX_TEXT = 512 * 1024;
@@ -326,10 +326,13 @@ function scenes(list, files) {
     if (typeof s.id !== "string" || !SKIN_ID.test(s.id) || ids.has(s.id)) fail(`${w}.id must be a short, unique, lowercase name.`);
     ids.add(s.id);
     if (typeof s.name !== "string" || !s.name.trim() || s.name.length > 40) fail(`${w}.name must be up to 40 characters.`);
-    if (s.desktop == null && s.phone == null) fail(`${w} needs a desktop or a phone version.`);
+    /* a live scene has no layers: the skin's own shader draws it (its thumb is the picture) */
+    if (s.live === true && (s.thumb == null || s.desktop != null || s.phone != null)) fail(`${w} is live: it needs a thumb and no desktop or phone version.`);
+    if (s.live !== true && s.desktop == null && s.phone == null) fail(`${w} needs a desktop or a phone version.`);
     return {
       id: s.id,
       name: s.name.trim(),
+      ...(s.live === true ? { live: true } : {}),
       ...(s.thumb != null ? { thumb: picture(s.thumb, `${w}.thumb`) } : {}),
       ...(s.desktop != null ? { desktop: comp(s.desktop, `${w}.desktop`) } : {}),
       ...(s.phone != null ? { phone: comp(s.phone, `${w}.phone`) } : {}),

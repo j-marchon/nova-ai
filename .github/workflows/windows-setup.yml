@@ -40,12 +40,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          setup=$(ls releases/desktop/Nova-*-setup.exe)
+          setup=$(ls out/Nova-*-setup.exe)
           mkdir sums
           gh release download "$TAG" -p SHA256SUMS -D sums --clobber || true
           touch sums/SHA256SUMS
           grep -v -- '-setup.exe' sums/SHA256SUMS > sums/new || true
-          (cd releases/desktop && sha256sum "$(basename "$setup")") | sed 's/ \*/  /' >> sums/new
+          (cd out && sha256sum "$(basename "$setup")") | sed 's/ \*/  /' >> sums/new
           mv sums/new sums/SHA256SUMS
           # latest.yml and the blockmap describe this installer, for Update in the app
-          gh release upload "$TAG" "$setup" "$setup.blockmap" releases/desktop/latest.yml sums/SHA256SUMS --clobber
+          gh release upload "$TAG" "$setup" "$setup.blockmap" out/latest.yml sums/SHA256SUMS --clobber

@@ -241,8 +241,8 @@ export function AppearancePanel({ ap, onChange }) {
         <ToggleRow
           on={ap.skinInChat === true}
           onClick={() => onChange({ skinInChat: ap.skinInChat !== true })}
-          title="Skin in chats"
-          sub="Off: chats stay plain black or white"
+          title="Skin background in chats"
+          sub="Off: a plain black or white page behind the chat. Bubbles, bar and buttons keep the skin"
         />
         <IconPicker ap={ap} onChange={onChange} />
       </Block>

@@ -656,9 +656,9 @@ function Nova({ data, setData }) {
   useMotionRoot(motionRoot, data.appearance?.motion || "full");
   const ap = data.appearance;
   /* a skin drawn for one mode (Aero is light) wears it whatever Mode says */
-  /* Look → Skin in chats off: the skin stays on everywhere (rail, chat
-     list, dock, sheets, the phone); only the chat itself drops it, on a
-     solid black or white page in Nova's plain look (ChatPage `plain`) */
+  /* Look → Skin in chats off: the skin stays on everywhere, bubbles, bar and
+     buttons of the chat included; only the chat's background is dropped,
+     for a solid black or white page (ChatPage `plain`) */
   const plainChat = page === "chat" && ap.skinInChat !== true;
   const worn = skinOf(ap);
   const light = (skinScheme(worn) || scheme) === "light";
@@ -678,6 +678,16 @@ function Nova({ data, setData }) {
   const iconId = appIconOf(ap);
   useEffect(() => { if (loaded) applyAppIcon(iconId); }, [iconId, loaded]);
   const SkinBackground = skin?.Background;
+  /* which of the skin's backgrounds is chosen, for its stylesheet and its
+     shader (html[data-scene-id], data-scene-ix) */
+  const sceneNow = sceneSet ? sceneSet.scenes.findIndex((s) => s.id === ap.scenes?.[worn]) : -1;
+  const sceneIx = sceneSet ? Math.max(0, sceneNow) : -1;
+  const sceneKey = sceneSet ? sceneSet.scenes[sceneIx]?.id : null;
+  useEffect(() => {
+    const root = document.documentElement;
+    if (sceneKey) { root.dataset.sceneId = sceneKey; root.dataset.sceneIx = String(sceneIx); }
+    else { delete root.dataset.sceneId; delete root.dataset.sceneIx; }
+  }, [sceneKey, sceneIx]);
   /* for the next startup screen, which shows before the saved data loads */
   useEffect(() => { try { localStorage.setItem("nova-scheme", light ? "light" : "dark"); } catch { /* private mode */ } }, [light]);
   const navigationRef = useNavigationMarker(page);

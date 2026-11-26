@@ -559,47 +559,11 @@ html[data-skin="minimal"] .nv-root { --nv-shadow: none; --nv-lamp-line: transpar
 .nv-root[data-scene="1"] .nv-chat-root > .absolute > .nv-texture { display: none; }
 
 /* ---------- Look → Skin in chats off (ChatPage `plain`) ----------
-   The skin stays on the rail, the chat list, the sheets and the phone; the
-   chat itself is a solid black or white page (a chat's own background
-   picture still shows) and its header, messages and message box wear Nova's
-   plain look. [data-theme] on those parts brings back Nova's base tokens;
-   what .nv-root and .nv-chat-root derive from them is named again here, and
-   what a skin draws over the chat's own parts is taken off. */
+   Only the background: the chat is a solid black or white page (a chat's own
+   background picture still shows). Its header, messages, buttons and message
+   box keep the skin; so do the rail, the chat list, the sheets and the phone. */
 :root .nv-root .nv-chat-root.nv-chat-root[data-plain="dark"] { background: oklch(0 0 0) !important; }
 :root .nv-root .nv-chat-root.nv-chat-root[data-plain="light"] { background: oklch(1 0 0) !important; }
-.nv-root .nv-chat-root .nv-plain {
-  --nv-control-edge: var(--nv-chat-edge); --nv-control: var(--nv-chat-control); --nv-pane: var(--nv-chat-panel);
-  --nv-line: var(--nv-hairline); --nv-line-strong: var(--nv-hairline-strong); --nv-shadow: none;
-  --nv-edge-ink: color-mix(in oklch, var(--nv-ink) 42%, transparent);
-  --color-zinc-50: var(--nv-ink); --color-zinc-100: var(--nv-ink); --color-zinc-200: var(--nv-ink); --color-zinc-300: var(--nv-ink);
-  --color-zinc-400: var(--nv-muted); --color-zinc-500: var(--nv-muted); --color-zinc-600: var(--nv-muted);
-  --color-zinc-700: var(--nv-chat-control); --color-zinc-800: var(--nv-chat-control); --color-zinc-900: var(--nv-chat-control); --color-zinc-950: var(--nv-bg);
-  --nv-r-control: 14px; --nv-r-card: 18px; --nv-r-block: 22px; --nv-r-panel: 28px; --nv-r-sheet: 28px;
-  --nv-font: "Overused Grotesk", var(--nv-system);
-  font-family: var(--nv-font); color: var(--nv-ink); caret-color: var(--nv-ink);
-}
-:root[data-skin] .nv-root .nv-chat-root .nv-plain :where(button) { font-weight: inherit; }
-:root[data-skin] .nv-root .nv-chat-root .nv-plain :is(.nv-label, .nv-msg-label) { color: var(--nv-muted); text-transform: uppercase; font-size: 10.5px; letter-spacing: .2em; font-weight: 500; }
-:root[data-skin] .nv-root .nv-chat-root .nv-plain .nv-msg-label { font-size: 11px; letter-spacing: .14em; }
-:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain :is(.nv-msg, .nv-composer, .nv-composer-island, .nv-edit-box, .nv-composer-tools > button, .nv-btn--secondary, .nv-btn--danger, .nv-hair, .nv-glass, .nv-card, .nv-block, .nv-surface) {
-  box-shadow: none !important; background-image: none !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; text-shadow: none;
-}
-:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain .nv-chat-messages .nv-msg { border-color: transparent !important; }
-:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain :is(.nv-glass, .nv-card, .nv-block, .nv-surface) { border-color: var(--nv-line) !important; }
-:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain .nv-composer { background-color: var(--nv-chat-panel) !important; border: 1px solid var(--nv-chat-edge) !important; }
-:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain .nv-composer-island { background: color-mix(in oklab, var(--nv-ink) 3%, transparent); border-color: var(--nv-line); }
-:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain .nv-composer-tools > button:not(.nv-btn--primary) { background: var(--nv-control) !important; border: 1px solid var(--nv-control-edge) !important; color: var(--nv-ink) !important; }
-:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain ::placeholder { color: var(--nv-faint); }
-:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain .nv-island-btn[data-active="1"] { color: var(--nv-ink); }
-:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain .nv-island-btn > .nv-ico { filter: none; }
-:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain .nv-edit-box { background: var(--nv-pane-base); border-color: var(--nv-edge-ink) !important; }
-:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain :is(.nv-btn--primary, .nv-primary) { background: var(--acc); color: var(--on-acc); border: 1px solid var(--acc) !important; box-shadow: none !important; text-shadow: none; filter: none; }
-:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain .nv-btn--secondary { background: transparent; border-color: var(--nv-line) !important; }
-:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain :is(.nv-btn--ghost, .nv-btn--icon, .nv-btn--secondary):hover:not(:disabled) { background: var(--nv-control); }
-:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain :is([data-inverted="1"], [style*="background: var(--nv-ink)"]) { --nv-bg: inherit; background: var(--nv-ink) !important; color: var(--nv-bg) !important; border-color: var(--nv-ink) !important; box-shadow: none !important; }
-:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain :where(input, textarea, [contenteditable]) { caret-color: var(--nv-ink); }
-:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain :where(:focus-visible) { outline-color: var(--nv-ink); }
-:root[data-skin] .nv-root .nv-chat-root .nv-plain.nv-plain ::selection { background: color-mix(in oklch, var(--nv-ink) 22%, transparent); color: inherit; }
 /* the effects over the layers */
 .nv-scene-glint {
   position: absolute; opacity: 0; will-change: transform, opacity;

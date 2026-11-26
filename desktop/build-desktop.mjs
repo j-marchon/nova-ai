@@ -1,8 +1,8 @@
 /* Builds Nova for the desktop as single files, without the source tree:
-     releases/desktop/Nova-<version>-x86_64.AppImage   (Linux, any distribution)
-     releases/desktop/Nova-<version>-amd64.deb         (Linux, Debian/Ubuntu/Mint: a menu entry, no FUSE)
-     releases/desktop/Nova-<version>-setup.exe         (Windows installer, per user, no admin)
-     releases/desktop/Nova-<version>-portable.exe      (Windows, no install)
+     out/Nova-<version>-x86_64.AppImage   (Linux, any distribution)
+     out/Nova-<version>-amd64.deb         (Linux, Debian/Ubuntu/Mint: a menu entry, no FUSE)
+     out/Nova-<version>-setup.exe         (Windows installer, per user, no admin)
+     out/Nova-<version>-portable.exe      (Windows, no install)
 
    Run after `npm run build` (npm run build:desktop does both). Targets can be
    limited: node desktop/build-desktop.mjs --linux | --win
@@ -18,7 +18,7 @@ import path from "node:path";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const STAGE = path.join(ROOT, "build", "desktop");
-const OUT = path.join(ROOT, "releases", "desktop");
+const OUT = path.join(ROOT, "out");
 const pkg = JSON.parse(await readFile(path.join(ROOT, "package.json"), "utf8"));
 const electronVersion = JSON.parse(await readFile(path.join(ROOT, "node_modules/electron/package.json"), "utf8")).version;
 

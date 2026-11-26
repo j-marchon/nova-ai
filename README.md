@@ -70,7 +70,7 @@ npm run build && node desktop/build-desktop.mjs --linux
 npm run build && node desktop/build-desktop.mjs --win
 ```
 
-Outputs land in `releases/desktop/`.
+Outputs land in `out/`.
 
 ### Android
 

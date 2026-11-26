@@ -32,8 +32,8 @@ sillytavern/
 /build/
 /release/
 
-# Release artifacts (desktop installers, release candidates)
-/releases/
+# Finished desktop installers (npm run build:desktop)
+/out/
 
 # design-tool scratch (Impeccable)
 .impeccable/

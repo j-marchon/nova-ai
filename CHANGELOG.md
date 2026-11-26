@@ -2,7 +2,7 @@
 
 ## [1.3.1] — 2026-11-26
 
-- New Holo skin support
+- New Holo skin support, with a light mode
 
 ## [1.3.0] — 2026-11-25
 

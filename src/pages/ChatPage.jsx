@@ -1253,13 +1253,10 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit, 
   const movingBg = bgs.some(b => b.animated || isVideo(b.image));
   const paint = chatAppearance(theme, { hasBackground: hasBg, moving: movingBg });
   const chatVars = { "--nv-chat-edge": paint.composerBorder, "--nv-chat-panel": paint.composerBg, "--nv-chat-control": paint.controlBg, "--nv-chat-blur": paint.composerBlur };
-  /* Look → Skin in chats off ("dark" / "light"): the chat's own parts (header,
-     messages, message box) wear Nova's plain look under any skin, on a solid
-     black or white page; the sheets and the phone opened from here keep the
-     skin. The colours are named again on each part, so they resolve against
-     Nova's own tokens there rather than the skin's. */
-  const plainSurface = plain ? { "data-theme": plain } : null;
-  const plainVars = plain ? chatVars : null;
+  /* Look → Skin in chats off ("dark" / "light") only takes the skin's
+     background out from behind the chat: the page is a solid black or white
+     one (index.css). The header, bubbles, buttons and message box wear the
+     skin either way. */
   const { userBubbleBg, aiBubbleBg, userBubbleFg, aiBubbleFg, composerBg, composerBlur,
     composerBorder, bubbleBorder, bubbleSheen, glassEdge } = paint;
   const chipBlur = {};
@@ -1352,10 +1349,8 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit, 
       {!hasBg && !plain && <div aria-hidden className="absolute inset-0 pointer-events-none"><Texture /></div>}
       {/* header */}
       <div
-        className={`nv-chat-header relative flex items-center gap-3 px-3 sm:px-5 z-10 ${hasBg ? "" : "nv-chat-head"} ${plain ? "nv-plain" : ""}`}
-        {...plainSurface}
+        className={`nv-chat-header relative flex items-center gap-3 px-3 sm:px-5 z-10 ${hasBg ? "" : "nv-chat-head"}`}
         style={{
-          ...plainVars,
           paddingTop: "calc(0.625rem + var(--sa-t))",
           paddingBottom: "0.625rem",
           background: "transparent",
@@ -1401,7 +1396,7 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit, 
 
 
       {/* messages, over this character's backdrop */}
-      <div className={`nv-chat-list flex-1 relative overflow-hidden ${plain ? "nv-plain" : ""}`} {...plainSurface} style={plainVars}>
+      <div className="nv-chat-list flex-1 relative overflow-hidden">
         <div
           ref={scrollerRef}
           className="nv-chat-messages absolute inset-0 overflow-y-auto px-1 sm:px-6 py-6"
@@ -1501,9 +1496,8 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit, 
 
       {/* composer */}
       <div
-        className={`nv-chat-dock relative px-4 pt-2 z-10 ${plain ? "nv-plain" : ""}`}
-        {...plainSurface}
-        style={{ ...plainVars, background: "transparent" }}
+        className="nv-chat-dock relative px-4 pt-2 z-10"
+        style={{ background: "transparent" }}
       >
         <div className="max-w-2xl lg:max-w-4xl mx-auto">
           {/* Nova Scope: who is in this story, above the message box. A

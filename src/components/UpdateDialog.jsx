@@ -26,7 +26,7 @@ export function UpdateDialog({ detail, prepare, install, onLater }) {
   };
 
   return (
-    <Modal title="A new update is available" onClose={working ? () => {} : onLater}>
+    <Modal title="A new update is available" onClose={working ? () => {} : onLater} scrimCloses={false}>
       <div className="space-y-4">
         {detail && <p className="text-sm text-zinc-200">{detail}</p>}
         {(note || working) && (
