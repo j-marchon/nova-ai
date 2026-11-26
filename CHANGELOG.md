@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.3.2] — 2026-11-26
+
+### Skins
+- **Aero and Holo are free** — both skins are now part of Nova for everyone; pick them in Settings → Look. They no longer take space in backups.
+- **Holo: Cobalt Current in light** — the glass moves again in light mode, with its colour film, split edges and sparkles, and no dark smudges on the silver.
+- **Nova Bridge wears Holo** — the Bridge window follows the app into Holo, in dark and light.
+
+### Settings
+- **About** — a new first tab: what Nova can do, section by section, and a button to support Nova on Ko-fi.
+- **Backup** — the You tab is now Backup.
+- **Update** — the update check has its own tab, with every release's notes (the newest open).
+
+### Chat
+- **Your name per chat** — playing as yourself (no persona) asks for the name to use in that chat; Cancel plays on without one. The app-wide Your name field is gone.
+
 ## [1.3.1] — 2026-11-26
 
 - New Holo skin support, with a light mode

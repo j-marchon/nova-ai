@@ -7,6 +7,7 @@ import { AccBtn, ActionMenu, Avatar, Button, EmptyState, Modal, MoreBtn, TopBar 
 import { ensembleTitle, linkedCards } from "../lib/scope.js";
 import { hideNotes } from "../lib/text.js";
 import { clip } from "../lib/util.js";
+import { userNameOf } from "../lib/data.js";
 import { fileSafe, saveFile } from "../lib/cards.js";
 import { chatFromImport, chatToJsonl, readChatJsonl } from "../lib/chatFile.js";
 import { undoToast } from "../lib/toast.js";
@@ -94,7 +95,7 @@ export function HistoryPage({ data, update, openChat, activeId = null }) {
     const { who, name } = describe(chat);
     const p = personaById.get(chat.personaId);
     try {
-      const where = await saveFile(`${fileSafe(name)}.jsonl`, chatToJsonl(chat, { user: p?.name || data.username || "You", char: who }), "application/jsonl");
+      const where = await saveFile(`${fileSafe(name)}.jsonl`, chatToJsonl(chat, { user: userNameOf(data, chat, p), char: who }), "application/jsonl");
       setStatus(`Saved to ${where}`);
     } catch (e) {
       setStatus(`Could not save: ${e?.message || e}`);

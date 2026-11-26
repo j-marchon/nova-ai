@@ -23,6 +23,9 @@ function render(i) {
     document.documentElement.dataset.skin = skin;
     BridgeMotion.startField();
   }
+  /* the app's light or dark mode (Holo wears both) */
+  const theme = i.theme === "light" ? "light" : "dark";
+  if (document.documentElement.dataset.theme !== theme) document.documentElement.dataset.theme = theme;
   const s = busy || i.starting ? "wait" : i.running ? "on" : "off";
   if ($("hero").dataset.s !== s) { $("hero").dataset.s = s; BridgeMotion.status($("state")); }
   $("state").textContent = s === "wait" ? "Starting…" : i.running ? "Running" : "Stopped";

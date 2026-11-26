@@ -18,5 +18,7 @@ await writeFile("dist/THIRD-PARTY-NOTICES.txt", notices.join("\n\n"));
 const assets = (await files('dist')).filter(p => !p.endsWith('/sw.js') && !p.endsWith('/_headers')).sort();
 const hash = createHash('sha256');
 for (const file of assets) hash.update(await readFile(file));
+/* the bundled skin zips (17 MB) stay out of the install cache; the service
+   worker keeps each one the first time it is worn (public/sw.js) */
 const template = await readFile('public/sw.js', 'utf8');
-await writeFile('dist/sw.js', template.replace('__RELEASE__', hash.digest('hex').slice(0, 16)).replace('__ASSETS__', JSON.stringify(assets.map(p => p.slice(4)))));
+await writeFile('dist/sw.js', template.replace('__RELEASE__', hash.digest('hex').slice(0, 16)).replace('__ASSETS__', JSON.stringify(assets.filter(p => !p.endsWith('.zip')).map(p => p.slice(4)))));

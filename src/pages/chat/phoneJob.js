@@ -3,6 +3,7 @@ import { ROOT_ANCHOR, anchorVisible, isRootAnchor, looseAnchorOf } from "../../l
 import { activity, activityModelLabel, cancelActivity, runActivity } from "../../lib/activity.js";
 import { WORLD_LOG_CAP, visibleLog } from "../../lib/memory.js";
 import { uid } from "../../lib/util.js";
+import { userNameOf } from "../../lib/data.js";
 import { POST_CAP, REPLIES_PER_POST, YOU, addUsage, cleanHandle, handsetOf, phoneAccounts, repliesTo, slug, usageOf } from "../../lib/phone.js";
 import {
   PROFILE_MAX_TOKENS, SKIP_SPANS, activityRequester, budgetOf, mergeBatch, mergeProfile, owedPlan, phoneBatch, profileKeys, profileRequest, runPhoneBatch, runProfile, storyPeople,
@@ -199,7 +200,7 @@ function contextOf(data, chat) {
   const character = !isUni ? (data.characters || []).find((c) => c.id === chat.characterId) || null : null;
   const ensemble = character ? ensembleOf(chat, data.characters || []) : [];
   const persona = (data.personas || []).find((p) => p.id === chat.personaId) || null;
-  const userName = persona?.name || data.username || "You";
+  const userName = userNameOf(data, chat, persona);
   const handset = handsetOf(chat);
   const accounts = phoneAccounts({ chat, character, ensemble, universe, userName, handset });
   const characters = storyPeople({ chat, character, ensemble, universe, handset, userName, messages: chat.messages });

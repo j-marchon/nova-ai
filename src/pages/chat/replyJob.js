@@ -1,5 +1,5 @@
 import { activeModel, completeText, hasKey, servedElsewhere, sourceOf, streamChat } from "../../lib/api.js";
-import { DEFAULT_HISTORY_TOKENS } from "../../lib/data.js";
+import { DEFAULT_HISTORY_TOKENS, userNameOf } from "../../lib/data.js";
 import { addHappening, cleanNote, withChatMemory, memoryCovered, memoryDue, parseWorldNote, sceneDue, sceneRequest, sceneWindow, summaryRequest, visibleLog, worldSceneRequest } from "../../lib/memory.js";
 import { anchorOf } from "../../lib/anchor.js";
 import { phoneAccounts, phoneNote } from "../../lib/phone.js";
@@ -103,7 +103,7 @@ function chatWork({ getData, update, chatId, stream = createStreamStore(), handl
   /* your other characters in this chat's Scope cast, sent as whole cards */
   const ensemble = character ? ensembleOf(chat, data.characters) : [];
   const persona = data.personas.find(p => p.id === chat.personaId);
-  const userName = persona?.name || data.username || "You";
+  const userName = userNameOf(data, chat, persona);
   const charLabel = isUni ? universe?.name : ensemble.length ? ensembleTitle([character, ...ensemble]) : character?.name;
   const books = chatBooks({ chat, character, ensemble, universe, lorebooks: data.lorebooks });
   const leads = isUni ? universe?.characters || [] : character ? [character] : [];
@@ -332,7 +332,7 @@ function chatWork({ getData, update, chatId, stream = createStreamStore(), handl
           character, universe, ensemble, persona,
           memory: chat.memory, scene: chat.scene, lorebooks: books,
           authorsNote: chat.authorsNote,
-          username: data.username, history, settings: scoping ? scopeSettings : mine, extra: turnExtra,
+          username: userName, history, settings: scoping ? scopeSettings : mine, extra: turnExtra,
           scope: scoping
             ? scopeNote({ scope: live, character, universe, ensemble, userName, step: scopeStep, lead })
             : null,
@@ -699,7 +699,7 @@ function chatWork({ getData, update, chatId, stream = createStreamStore(), handl
         character, universe, ensemble, persona,
         memory: chat.memory, scene: chat.scene, lorebooks: books,
         authorsNote: chat.authorsNote,
-        username: data.username,
+        username: userName,
         history: chatRef.current.messages.slice(0, i + 1),
         settings: scoping ? scopeSettings : data.settings,
         mode: "continue",

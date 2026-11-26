@@ -1,11 +1,12 @@
 /* Nova Bridge's window, in the skin the Nova app on this computer wears
    (html[data-skin]): Nova's own monochrome, Minimal (the same, plain and
-   still), or Aero. The window itself is
+   still), Aero, or Holo (in the app's mode, html[data-theme]). The window itself is
    frameless and see-through; .frame is the rounded window. */
 
 @font-face { font-family: "Overused Grotesk"; src: url("../../src/assets/fonts/OverusedGroteskRoman-VF.woff2") format("woff2"); font-weight: 300 900; font-display: swap; }
 @font-face { font-family: "Source Sans 3"; src: url("aero/source-sans-3-latin.woff2") format("woff2"); font-weight: 200 900; font-display: swap; }
 @font-face { font-family: "TASA Orbiter"; src: url("aero/tasa-orbiter-latin.woff2") format("woff2"); font-weight: 400 800; font-display: swap; }
+@font-face { font-family: "Sora"; src: url("holo/sora-latin.woff2") format("woff2"); font-weight: 100 800; font-display: swap; }
 
 /* ---------- Nova ---------- */
 :root {
@@ -77,7 +78,7 @@ button:disabled { opacity: .4; cursor: default; }
 .flare i { position: absolute; display: block; }
 .flare .h { left: -44px; width: 88px; top: -.5px; height: 1px; background: linear-gradient(90deg, transparent, currentColor, transparent); }
 .flare .v { top: -30px; height: 60px; left: -.5px; width: 1px; background: linear-gradient(transparent, currentColor, transparent); }
-.sky, .cloud, .skyline, .lake, .bubbles { display: none; }
+.sky, .cloud, .skyline, .lake, .bubbles, .fold, .sweep { display: none; }
 
 /* the bar: the window's own title bar, dragged to move it */
 .bar { -webkit-app-region: drag; height: 48px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 10px 0 18px; }
@@ -216,3 +217,121 @@ html[data-skin="aero"] dialog { background: linear-gradient(180deg, oklch(1 0 0 
 html[data-skin="aero"] dialog::backdrop { background: oklch(0.38 0.09 240 / .3); }
 html[data-skin="aero"] dialog.warn { border-color: oklch(0.56 0.2 25 / .6); }
 html[data-skin="aero"] ::selection { background: oklch(0.82 0.11 215 / .7); color: var(--ink); }
+
+/* ---------- Holo: black chrome and prism light (skins/holo/DESIGN.md) ----------
+   Dark: the void, smoked glass with the red/cyan split edge, foil for the
+   main action and what is on. Light (the app in light mode): polished
+   chrome, gunmetal for the main action, a chrome bead in a groove. */
+html[data-skin="holo"] {
+  --display: "Sora", var(--font);
+  --bg: oklch(0.1 0.014 235);
+  --ink: oklch(0.97 0.012 200);
+  --muted: oklch(0.9 0.03 205 / .7);
+  --faint: oklch(0.88 0.035 205 / .58);
+  --line: oklch(0.86 0.06 205 / .12);
+  --line-strong: oklch(0.86 0.07 205 / .26);
+  --card: oklch(0.13 0.02 232 / .74);
+  --card-sheen: linear-gradient(165deg, oklch(0.95 0.05 200 / .07), oklch(0.95 0.05 200 / 0) 38%);
+  --control: oklch(0.85 0.05 205 / .07);
+  --primary: linear-gradient(115deg, oklch(0.9 0.09 205) 0%, oklch(0.84 0.1 290) 20%, oklch(0.88 0.1 350) 38%, oklch(0.93 0.08 80) 56%, oklch(0.9 0.11 160) 76%, oklch(0.87 0.1 220) 100%);
+  --on-primary: oklch(0.2 0.045 255);
+  --primary-glow: inset 0 1px 0 oklch(1 0 0 / .75), inset 0 -8px 12px -8px oklch(0.55 0.16 300 / .45), -3px 0 12px -5px oklch(0.68 0.22 350 / .6), 3px 0 12px -5px oklch(0.78 0.15 205 / .65);
+  --primary-edge: oklch(1 0 0 / .55);
+  --danger: oklch(0.66 0.2 20);
+  --light-on: oklch(0.88 0.1 195);
+  --label: oklch(0.86 0.09 195);
+  --label-glow: 0 0 10px oklch(0.82 0.12 200 / .35);
+  --split: inset 1px 0 0 oklch(0.7 0.2 350 / .32), inset -1px 0 0 oklch(0.8 0.13 205 / .4), inset 0 1px 0 oklch(0.95 0.05 200 / .16);
+  --shadow: var(--split), 0 20px 44px -26px oklch(0.45 0.15 225 / .65);
+  /* one streak of light across every surface, fixed to the window, as over one sheet of metal */
+  --streak: repeating-linear-gradient(104deg, transparent 0 220px, oklch(0.95 0.06 200 / .075) 262px, oklch(0.95 0.06 200 / .02) 292px, transparent 330px 560px);
+  --title-split: -1.5px 0 0 oklch(0.68 0.22 350 / .55), 1.5px 0 0 oklch(0.8 0.14 205 / .6), 0 0 22px oklch(0.8 0.12 200 / .32);
+  --pearl: radial-gradient(circle at 34% 28%, oklch(1 0 0) 0 18%, oklch(0.93 0.05 200) 42%, oklch(0.78 0.08 290) 72%, oklch(0.6 0.08 230) 100%);
+  --groove: oklch(0.09 0.016 235 / .72);
+  --groove-shadow: inset 0 1px 3px oklch(0 0 0 / .45);
+  --pane: linear-gradient(165deg, oklch(0.95 0.05 200 / .07), oklch(0.95 0.05 200 / 0) 38%), oklch(0.15 0.024 232 / .96);
+  --scrim: oklch(0.06 0.02 240 / .62);
+}
+html[data-skin="holo"] .frame {
+  background: radial-gradient(90% 60% at 18% 0%, oklch(0.24 0.06 215 / .9), transparent 70%), radial-gradient(70% 50% at 100% 100%, oklch(0.2 0.07 300 / .7), transparent 70%), var(--bg);
+}
+html[data-skin="holo"] .grid, html[data-skin="holo"] .lamp { display: none; }
+html[data-skin="holo"] .fold, html[data-skin="holo"] .sweep { display: block; }
+html[data-skin="holo"] .fold { inset: -8%; width: 116%; height: 116%; object-fit: cover; will-change: transform; }
+/* a band of spectrum crossing now and then (motion.js); unseen when still */
+html[data-skin="holo"] .sweep {
+  inset: 0; opacity: 0; will-change: transform, opacity; mix-blend-mode: screen;
+  background: linear-gradient(100deg, transparent 30%, oklch(0.68 0.24 350 / .12) 42%, oklch(0.9 0.14 80 / .14) 47%, oklch(0.9 0.13 170 / .16) 51%, oklch(0.72 0.17 260 / .13) 56%, transparent 68%);
+}
+html[data-skin="holo"] .mark { filter: grayscale(1) drop-shadow(-1px 0 0 oklch(0.68 0.22 350 / .7)) drop-shadow(1px 0 0 oklch(0.8 0.14 205 / .75)); }
+html[data-skin="holo"] .title { font-weight: 400; letter-spacing: .04em; }
+html[data-skin="holo"] .card { background: var(--streak) 0 0 / auto fixed, var(--card-sheen), var(--card); border-radius: 16px; }
+html[data-skin="holo"] .card h2 { font-size: 10.5px; letter-spacing: .22em; font-weight: 600; color: var(--label); text-shadow: var(--label-glow); }
+html[data-skin="holo"] .hero h1 { font-weight: 300; font-size: 24px; letter-spacing: -.02em; text-shadow: var(--title-split); }
+html[data-skin="holo"] .stat b { font-weight: 300; letter-spacing: -.02em; text-shadow: var(--title-split); }
+html[data-skin="holo"] .code { font-weight: 400; }
+html[data-skin="holo"] .hero[data-s="on"] .light, html[data-skin="holo"] .dot.on { box-shadow: -2px 0 6px -1px oklch(0.68 0.22 350 / .8), 2px 0 6px -1px oklch(0.8 0.14 205 / .85), 0 0 12px color-mix(in oklch, var(--light-on) 60%, transparent); }
+html[data-skin="holo"] .btn { border-radius: 12px; border-color: oklch(0.88 0.06 200 / .17); background: var(--card-sheen), oklch(0.14 0.022 232 / .62); box-shadow: var(--split); }
+/* foil: the film slides on hover */
+html[data-skin="holo"] .btn.primary { background: var(--primary); background-size: 220% 100%; background-position: 30% 0; border-color: var(--primary-edge); color: var(--on-primary); box-shadow: var(--primary-glow); transition: background-position .9s cubic-bezier(.16, 1, .3, 1); }
+html[data-skin="holo"] .btn.primary:not(:disabled):hover { background-position: 100% 0; }
+html[data-skin="holo"] .btn.danger { background: var(--danger); border-color: transparent; color: var(--on-danger); box-shadow: none; }
+html[data-skin="holo"] .switch { background: var(--groove); border-color: oklch(0.88 0.06 200 / .17); box-shadow: var(--groove-shadow); }
+html[data-skin="holo"] .switch[aria-checked="true"] { background: var(--primary); border-color: var(--primary-edge); box-shadow: var(--primary-glow); }
+html[data-skin="holo"] .switch span, html[data-skin="holo"] .switch[aria-checked="true"] span { background: var(--pearl); box-shadow: -1px 0 3px oklch(0.7 0.2 350 / .55), 1px 0 3px oklch(0.8 0.14 205 / .6), 0 1px 3px oklch(0 0 0 / .5); }
+html[data-skin="holo"] .note { background: var(--groove); }
+html[data-skin="holo"] dialog { background: var(--pane); border-color: var(--line-strong); box-shadow: var(--shadow); }
+html[data-skin="holo"] dialog h2 { font-family: var(--display); font-weight: 400; }
+html[data-skin="holo"] dialog.warn { border-color: color-mix(in oklch, var(--danger) 60%, transparent); }
+html[data-skin="holo"] dialog::backdrop { background: var(--scrim); }
+html[data-skin="holo"] :focus-visible { outline-color: var(--light-on); }
+html[data-skin="holo"] ::selection { background: oklch(0.6 0.17 290 / .55); color: oklch(1 0 0); }
+@media (prefers-reduced-motion: reduce) { html[data-skin="holo"] .btn.primary { transition: none; } }
+
+/* Holo in light: polished chrome */
+html[data-skin="holo"][data-theme="light"] {
+  color-scheme: light;
+  --bg: oklch(0.9 0.008 250);
+  --ink: oklch(0.2 0.022 255);
+  --muted: oklch(0.33 0.025 255 / .84);
+  --faint: oklch(0.36 0.025 255 / .66);
+  --line: oklch(0.3 0.025 255 / .2);
+  --line-strong: oklch(0.3 0.025 255 / .36);
+  --card: linear-gradient(165deg, oklch(0.99 0.003 250 / .9), oklch(0.93 0.008 250 / .88) 55%, oklch(0.96 0.005 250 / .9));
+  --card-sheen: linear-gradient(transparent, transparent);
+  --control: oklch(0.2 0.02 255 / .06);
+  /* gunmetal: the chrome that carries white ink */
+  --primary: linear-gradient(180deg, oklch(0.5 0.022 255) 0%, oklch(0.3 0.02 255) 46%, oklch(0.16 0.015 255) 52%, oklch(0.32 0.02 255) 100%);
+  --on-primary: oklch(0.99 0.004 250);
+  --primary-glow: inset 0 1px 0 oklch(1 0 0 / .35), inset 0 -1px 0 oklch(0 0 0 / .4), -2px 0 8px -4px oklch(0.68 0.22 350 / .7), 2px 0 8px -4px oklch(0.78 0.15 205 / .75), 0 6px 14px -6px oklch(0.2 0.03 255 / .6);
+  --primary-edge: oklch(0.12 0.015 255 / .8);
+  --danger: oklch(0.56 0.2 25);
+  --light-on: oklch(0.6 0.13 205);
+  --label: oklch(0.36 0.04 255);
+  --label-glow: 0 1px 0 oklch(1 0 0 / .6);
+  --split: inset 1px 0 0 oklch(0.68 0.2 350 / .26), inset -1px 0 0 oklch(0.78 0.13 205 / .34), inset 0 1px 0 oklch(1 0 0 / .9), inset 0 -1px 0 oklch(0.5 0.02 255 / .22);
+  --shadow: var(--split), 0 18px 38px -22px oklch(0.3 0.03 255 / .5), 0 2px 6px -2px oklch(0.3 0.03 255 / .25);
+  --streak: repeating-linear-gradient(104deg, transparent 0 190px, oklch(1 0 0 / .55) 232px, oklch(1 0 0 / .08) 262px, transparent 300px 520px);
+  --title-split: -1px 0 0 oklch(0.68 0.2 350 / .32), 1px 0 0 oklch(0.78 0.13 205 / .4), 0 1px 0 oklch(1 0 0 / .7);
+  --pearl: radial-gradient(circle at 34% 26%, oklch(1 0 0) 0 14%, oklch(0.95 0.006 250) 34%, oklch(0.74 0.014 252) 62%, oklch(0.5 0.02 255) 82%, oklch(0.86 0.01 250) 100%);
+  --groove: linear-gradient(180deg, oklch(0.84 0.01 250 / .85), oklch(0.93 0.006 250 / .85));
+  --groove-shadow: inset 0 2px 4px oklch(0.25 0.03 255 / .3), 0 1px 0 oklch(1 0 0 / .7);
+  --pane: linear-gradient(165deg, oklch(0.99 0.003 250), oklch(0.94 0.007 250) 55%, oklch(0.97 0.004 250));
+  --scrim: oklch(0.85 0.012 250 / .6);
+}
+html[data-skin="holo"][data-theme="light"] .frame {
+  background:
+    radial-gradient(55% 38% at 14% 18%, oklch(1 0 0 / .95), transparent 70%),
+    radial-gradient(45% 32% at 88% 26%, oklch(0.97 0.02 300 / .75), transparent 70%),
+    linear-gradient(172deg, oklch(0.93 0.008 250) 0%, oklch(0.79 0.02 255) 36%, oklch(0.9 0.01 250) 50%, oklch(0.75 0.025 255) 68%, oklch(0.95 0.006 250) 100%);
+}
+html[data-skin="holo"][data-theme="light"] .fold { mix-blend-mode: multiply; opacity: .75; }
+html[data-skin="holo"][data-theme="light"] .sweep { mix-blend-mode: normal; background: linear-gradient(100deg, transparent 34%, oklch(1 0 0 / .4) 48%, oklch(1 0 0 / .1) 54%, transparent 66%); }
+html[data-skin="holo"][data-theme="light"] .card { border-color: oklch(0.45 0.025 255 / .3); }
+html[data-skin="holo"][data-theme="light"] .btn { background: var(--streak) 0 0 / auto fixed, linear-gradient(180deg, oklch(0.995 0.002 250 / .94) 0%, oklch(0.94 0.006 250 / .93) 40%, oklch(0.84 0.014 252 / .94) 50%, oklch(0.93 0.008 250 / .94) 68%, oklch(0.98 0.003 250 / .95) 100%); border-color: oklch(0.4 0.025 255 / .4); box-shadow: var(--split), 0 2px 5px -2px oklch(0.3 0.03 255 / .35); }
+html[data-skin="holo"][data-theme="light"] .btn.primary { background: var(--streak) 0 0 / auto fixed, var(--primary); border-color: var(--primary-edge); box-shadow: var(--primary-glow); transition: none; }
+html[data-skin="holo"][data-theme="light"] .btn.danger { background: var(--danger); border-color: transparent; box-shadow: none; }
+html[data-skin="holo"][data-theme="light"] .switch { border-color: oklch(0.4 0.025 255 / .4); }
+html[data-skin="holo"][data-theme="light"] .switch span, html[data-skin="holo"][data-theme="light"] .switch[aria-checked="true"] span { box-shadow: -1px 0 3px oklch(0.68 0.2 350 / .4), 1px 0 3px oklch(0.78 0.13 205 / .5), 0 2px 4px oklch(0.2 0.03 255 / .5); }
+html[data-skin="holo"][data-theme="light"] .win:hover { background: oklch(1 0 0 / .55); }
+html[data-skin="holo"][data-theme="light"] ::selection { background: oklch(0.55 0.14 255 / .35); color: inherit; }

@@ -919,3 +919,7 @@ html[data-skin="minimal"] .nv-root { --nv-shadow: none; --nv-lamp-line: transpar
 /* a list the system draws (a <select>'s options): the app's own colours, so
    its text never matches its background in either mode */
 .nv-root select option, .nv-root select optgroup { background-color: var(--nv-pane-base); color: var(--nv-ink); }
+/* Settings → About: the one coloured control, Ko-fi's blue, so it stands out
+   in every skin (darkened from #29abe0 so white text reads at 4.5:1) */
+.nv-kofi { background: linear-gradient(180deg, #2aa6dd, #0e74ae); box-shadow: 0 0 0 1px oklch(1 0 0 / .18) inset, 0 6px 22px -6px #29abe0; text-shadow: 0 1px 1px oklch(0 0 0 / .25); }
+.nv-kofi:focus-visible { outline: 2px solid var(--nv-ink); outline-offset: 3px; }

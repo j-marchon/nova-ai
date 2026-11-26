@@ -9,9 +9,9 @@ import { installEffects } from "./effects.js";
 
    Nova's own look is "nova". "minimal" also comes with the app: plain black,
    monochrome, with no grid, grain or effects (index.css, under
-   html[data-skin="minimal"]). Every other skin is a pack added on this
-   device (Settings → Look → Add skin), kept by store.js and checked by
-   pack.js. Wearing one puts its stylesheet in the page, scoped to
+   html[data-skin="minimal"]). Every other skin is a pack, checked by
+   pack.js: Aero and Holo ship with the app (BUNDLED_SKINS), a paid one is
+   added on this device (Settings → Look) and kept by store.js. Wearing one puts its stylesheet in the page, scoped to
    html[data-skin="<id>"], draws its background and startup screen with
    the app's skin engine (Scene.jsx), and switches on its effects
    (effects.js). Nothing about what the app can do changes with the skin.
@@ -43,38 +43,49 @@ const BUILT_IN = [STANDARD, MINIMAL];
 const builtIn = (id) => BUILT_IN.find((k) => k.id === id) || null;
 export const isBuiltInSkin = (id) => !!builtIn(id);
 
-/* Skins sold separately to supporters. They are listed whether or not they
-   are on this device, so everyone can see them; one that is not added yet
-   shows as locked until its file is added. */
-/* where supporters get them: the Ko-fi page */
+/* where people can support Nova: the Ko-fi page (Settings → About) */
 export const SUPPORT_URL = "https://ko-fi.com/bjmar";
-export const SUPPORTER_SKINS = [
-  { id: "aero", name: "Aero", note: "Supporter skin", thumb: "skins/aero.webp", loop: "skins/aero-loop.webp", swatch: "linear-gradient(180deg, oklch(0.83 0.08 235), oklch(0.97 0.02 215) 58%, oklch(0.84 0.09 225))", locked: true },
-  { id: "holo", name: "Holo", note: "Supporter skin", thumb: "skins/holo.webp", loop: "skins/holo-loop.webp", swatch: "conic-gradient(from 200deg at 55% 50%, oklch(0.3 0.08 240), oklch(0.55 0.15 200), oklch(0.85 0.1 90), oklch(0.45 0.17 300), oklch(0.3 0.08 240))", locked: true },
-];
 
-/* A skin's picture in Look → Skin: { still, loop } or null. Nova's and the
-   supporter skins' come with the app (public/skins/, made by
-   from their first scene: Ignition, Skylight
-   Arcade, Prism Fold), the same picture whether or not the skin is on this device; any
-   other pack shows its first scene's still once it has loaded. `rev` as
+/* Skin packs that are part of the app, free for everyone: each zip ships in
+   public/skins/ (`bundle`) and is read from there whenever it is worn, never
+   copied into the device's skin store, so backups and Sync leave it out.
+   The pack's own details are written here (a test keeps them equal to the
+   zip's) so the list and the startup screen know them before it loads. */
+export const BUNDLED_SKINS = [
+  { id: "aero", name: "Aero", note: "Koi, glass and clear water in Frutiger Aero light", version: "1.2.0", scheme: "light", surface: true, bundle: "skins/aero.zip", thumb: "skins/aero.webp", loop: "skins/aero-loop.webp", swatch: "linear-gradient(180deg, oklch(0.83 0.08 235), oklch(0.97 0.02 215) 58%, oklch(0.84 0.09 225))" },
+  { id: "holo", name: "Holo", note: "Liquid chrome and prism light, in dark and light", version: "1.1.0", scheme: null, surface: true, bundle: "skins/holo.zip", thumb: "skins/holo.webp", loop: "skins/holo-loop.webp", swatch: "conic-gradient(from 200deg at 55% 50%, oklch(0.3 0.08 240), oklch(0.55 0.15 200), oklch(0.85 0.1 90), oklch(0.45 0.17 300), oklch(0.3 0.08 240))" },
+];
+const bundled = (id) => BUNDLED_SKINS.find((k) => k.id === id) || null;
+export const isBundledSkin = (id) => !!bundled(id);
+
+/* Paid skins, sold as files: listed whether or not they are on this device,
+   locked until their zip is added (Settings → Look), which must be a
+   published file (official.js). None yet: each entry is
+   { id, name, note, thumb?, loop?, swatch, locked: true }. */
+export const PAID_SKINS = [];
+
+/* A skin's picture in Look → Skin: { still, loop } or null. Nova's, the
+   bundled skins' and the paid skins' come with the app (public/skins/,
+   from their first scene: Ignition, Skylight Arcade, Prism Fold), the same
+   picture whether or not the skin is on this device; any other pack shows
+   its first scene's still once it has loaded. `rev` as
    for sceneSetOf. */
 const APP_ROOT = () => import.meta.env?.BASE_URL || "/";
 export function skinTileArt(id, rev = 0) {
-  const k = builtIn(id) || SUPPORTER_SKINS.find((x) => x.id === id);
+  const k = builtIn(id) || bundled(id) || PAID_SKINS.find((x) => x.id === id);
   if (k?.thumb) return { still: APP_ROOT() + k.thumb, loop: k.loop ? APP_ROOT() + k.loop : null };
   const set = sceneSetOf(id, rev);
   const thumb = set?.scenes[0]?.thumb;
   return thumb ? { still: set.base + thumb, loop: null } : null;
 }
 
-/* Nova and Minimal first, then the added skins in the order they were
-   added, then the supporter skins not on this device yet. */
+/* Nova and Minimal first, then the bundled skins, then the added skins in
+   the order they were added, then the paid skins not on this device yet. */
 export function skinList(installed = installedSkins()) {
   const have = new Set(installed.map((m) => m.id));
-  return [...BUILT_IN, ...installed, ...SUPPORTER_SKINS.filter((k) => !have.has(k.id))];
+  return [...BUILT_IN, ...BUNDLED_SKINS, ...installed.filter((m) => !isBundledSkin(m.id)), ...PAID_SKINS.filter((k) => !have.has(k.id))];
 }
-const metaOf = (id) => builtIn(id) || installedSkins().find((m) => m.id === id) || null;
+const metaOf = (id) => builtIn(id) || bundled(id) || installedSkins().find((m) => m.id === id) || null;
 
 /* a well-formed pick, whether or not that skin is on this device */
 export const isSkinId = (id) => isBuiltInSkin(id) || isPackId(id);
@@ -143,7 +154,12 @@ export function loadSkin(id) {
   if (isBuiltInSkin(id) || !canWear(id)) return Promise.resolve(null);
   if (loaded.has(id)) return Promise.resolve(loaded.get(id));
   if (!pending.has(id)) {
-    const job = packBytes(id).then((bytes) => {
+    /* a bundled skin from the app's own files, any other from the store */
+    const k = bundled(id);
+    const bytes = k
+      ? fetch(APP_ROOT() + k.bundle).then((res) => (res.ok ? res.arrayBuffer().then((b) => new Uint8Array(b)) : null))
+      : packBytes(id);
+    const job = bytes.then((bytes) => {
       if (!bytes) throw new Error(`The ${id} skin is not on this device.`);
       const mod = build(readPack(bytes));
       if (pending.get(id) === job) { loaded.set(id, mod); pending.delete(id); markLoaded(); }
@@ -179,8 +195,11 @@ export function wearSkin(id) {
 /* A skin added again (a new version) or removed: forget the loaded copy,
    take it off if it is worn, so the next wear reads the new one. */
 const seen = new Map();
+/* the bundled skins never change while the app runs; an old stored copy
+   of one being cleared (store.js) must not take it off */
+const storedPacks = () => installedSkins().filter((m) => !isBundledSkin(m.id));
 onSkinsChange(() => {
-  const now = new Map(installedSkins().map((m) => [m.id, skinRevision(m.id)]));
+  const now = new Map(storedPacks().map((m) => [m.id, skinRevision(m.id)]));
   for (const [id, r] of seen) {
     if (now.get(id) === r) continue;
     if (worn === id) wearSkin("nova");
@@ -191,4 +210,4 @@ onSkinsChange(() => {
   seen.clear();
   for (const [id, r] of now) seen.set(id, r);
 });
-for (const m of installedSkins()) seen.set(m.id, skinRevision(m.id));
+for (const m of storedPacks()) seen.set(m.id, skinRevision(m.id));

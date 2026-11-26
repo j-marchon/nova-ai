@@ -160,9 +160,9 @@ describe("Bridge limits in the Usage tab", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     await act(async () => vi.advanceTimersByTimeAsync(60000));
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    await act(async () => button("You").click());
+    await act(async () => button("Backup").click());
     await act(async () => vi.advanceTimersByTimeAsync(180000));
-    /* the You tab asks the Bridge about sync; only /usage calls count here */
+    /* the Backup tab asks the Bridge about sync; only /usage calls count here */
     expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/usage"))).toHaveLength(2);
   });
 

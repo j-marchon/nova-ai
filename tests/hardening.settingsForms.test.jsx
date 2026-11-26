@@ -59,19 +59,20 @@ function harness(initial, renderPage) {
 }
 
 describe("tab orders", () => {
-  it("Settings tabs run Nova Bridge, model, replies, memory, look, usage, profile", async () => {
+  it("Settings tabs run About, Nova Bridge, model, replies, memory, look, usage, backup, update", async () => {
     await mount(<SettingsPage data={emptyData} update={() => {}} />);
     const labels = [...host.querySelectorAll("[aria-label='Settings tabs'] button")].map(b => b.textContent.trim());
-    expect(labels).toEqual(["Nova Bridge", "Model", "Replies", "Memory", "Look", "Usage", "You"]);
+    expect(labels).toEqual(["About", "Nova Bridge", "Model", "Replies", "Memory", "Look", "Usage", "Backup", "Update"]);
   });
 
-  it("opens on Model, where providers are added, with or without a key", async () => {
+  it("opens on Model while a provider is still needed, on About once one works", async () => {
     const pressed = () => host.querySelector("[aria-label='Settings tabs'] button[aria-pressed='true']").textContent.trim();
     await mount(<SettingsPage data={emptyData} update={() => {}} />);
     expect(pressed()).toBe("Model");
     act(() => root.unmount()); root = createRoot(host);
     await mount(<SettingsPage data={{ ...emptyData, settings: keyed() }} update={() => {}} />);
-    expect(pressed()).toBe("Model");
+    expect(pressed()).toBe("About");
+    expect(host.querySelector("a[href='https://ko-fi.com/bjmar']")).not.toBeNull();
   });
 
   it("Create tabs run characters, universes, personas, lorebooks, with no Social tab", async () => {

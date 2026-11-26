@@ -70,6 +70,9 @@ if (!process.versions.electron) {
       fs.writeFileSync(path.join(dir, "skin.json"), JSON.stringify({ skin: "aero" }));
       await js('new Promise(r=>setTimeout(r,1200))');
       assert.equal(await js('document.documentElement.dataset.skin'), "aero");
+      fs.writeFileSync(path.join(dir, "skin.json"), JSON.stringify({ skin: "holo", theme: "light" }));
+      await js('new Promise(r=>setTimeout(r,1200))');
+      assert.equal(await js('document.documentElement.dataset.skin + " " + document.documentElement.dataset.theme'), "holo light");
       fs.writeFileSync(path.join(dir, "skin.json"), JSON.stringify({ skin: "some-other-pack" }));
       await js('new Promise(r=>setTimeout(r,1200))');
       assert.equal(await js('document.documentElement.dataset.skin'), "nova");

@@ -21,7 +21,7 @@ const { randomBytes } = require("node:crypto");
 const { pathToFileURL, fileURLToPath } = require("node:url");
 
 /* the skins the Bridge window can wear; any other falls back to Nova's own */
-const SKINS = ["nova", "minimal", "aero"];
+const SKINS = ["nova", "minimal", "aero", "holo"];
 
 function createBridgeHost({
   bridgeFile,            /* path to bridge.mjs (or its bundle) */
@@ -49,19 +49,20 @@ function createBridgeHost({
     catch (e) { if (e.code !== "ENOENT") console.warn(`Nova Bridge: could not read ${file}: ${e.message}`); }
   }
 
-  /* The skin the Nova app on this computer wears (desktop/main.cjs writes
-     it here as it changes); read again only when the file does. */
+  /* The skin the Nova app on this computer wears, and its light or dark
+     mode (desktop/main.cjs writes them here as they change); read again
+     only when the file does. */
   const SKIN_FILE = path.join(HOME, "skin.json");
-  let skin = { at: -1, id: "nova" };
+  let skin = { at: -1, id: "nova", theme: "dark" };
   const currentSkin = () => {
     try {
       const at = fs.statSync(SKIN_FILE).mtimeMs;
       if (at !== skin.at) {
-        const id = JSON.parse(fs.readFileSync(SKIN_FILE, "utf8")).skin;
-        skin = { at, id: SKINS.includes(id) ? id : "nova" };
+        const saved = JSON.parse(fs.readFileSync(SKIN_FILE, "utf8"));
+        skin = { at, id: SKINS.includes(saved.skin) ? saved.skin : "nova", theme: saved.theme === "light" ? "light" : "dark" };
       }
-    } catch { skin = { at: -1, id: "nova" }; }
-    return skin.id;
+    } catch { skin = { at: -1, id: "nova", theme: "dark" }; }
+    return skin;
   };
 
   function connectionKey() {
@@ -183,7 +184,8 @@ function createBridgeHost({
 
   async function snapshot() {
     const b = await lib();
-    return { ...b.bridgeInfo(), starting, problem: lastProblem, skin: currentSkin(), platform: process.platform };
+    const { id, theme } = currentSkin();
+    return { ...b.bridgeInfo(), starting, problem: lastProblem, skin: id, theme, platform: process.platform };
   }
 
   /* compared as paths, not as URL text: Node and Chromium escape some
@@ -226,7 +228,8 @@ function createBridgeHost({
   });
 
   function createWindow({ show = true } = {}) {
-    nativeTheme.themeSource = currentSkin() === "aero" ? "light" : "dark";
+    const { id, theme } = currentSkin();
+    nativeTheme.themeSource = id === "aero" || (id === "holo" && theme === "light") ? "light" : "dark";
     Menu.setApplicationMenu(null);
     /* frameless and see-through: the window's rounded corners are its page's */
     win = new BrowserWindow({

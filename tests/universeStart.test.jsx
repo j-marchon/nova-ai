@@ -42,7 +42,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function startFromCreate(tab, settings = {}) {
+async function startFromCreate(tab, settings = {}, name = "") {
   const d = JSON.parse(JSON.stringify(emptyData));
   d.username = "Ana";
   Object.assign(d.settings, settings);
@@ -54,6 +54,14 @@ async function startFromCreate(tab, settings = {}) {
   await flush();
   if (tab !== "Characters") await click(buttons().find((b) => b.textContent.trim().startsWith(tab)));
   await click(buttons().find((b) => b.getAttribute("aria-label") === "New chat" || b.textContent.trim() === "New"));
+  /* no persona: the name for this chat is asked first (NamePrompt) */
+  const field = document.querySelector("input[aria-label='Your name']");
+  expect(field).toBeTruthy();
+  if (name) {
+    await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(field, name); field.dispatchEvent(new Event("input", { bubbles: true })); });
+    await flush();
+  }
+  await click([...document.querySelectorAll("button")].find((b) => b.textContent.trim() === (name ? "Use" : "Cancel")));
   /* saved through the debounce; the chat page itself loads lazily */
   let chats = [];
   for (let i = 0; i < 100 && !chats.length; i++) {
@@ -82,4 +90,12 @@ it("a character chat keeps its old start, plus the phone level", async () => {
   expect(saved.kind).toBe("character");
   expect(saved.scope).toBeUndefined();
   expect(saved.handset.level).toBe("light");
+});
+
+it("playing as yourself keeps the name given for that chat, or none after Cancel", async () => {
+  expect((await startFromCreate("Characters", {}, "Kit")).userName).toBe("Kit");
+});
+
+it("Cancel starts the chat without a name, not the old app-wide one", async () => {
+  expect((await startFromCreate("Characters")).userName).toBe("");
 });

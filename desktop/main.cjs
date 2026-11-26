@@ -217,16 +217,17 @@ function bridgeShortcut() {
   } catch (e) { console.warn("Nova: could not add Nova Bridge to the Start menu:", e.message); }
 }
 
-/* the skin Nova wears, for the Bridge window to match */
-function shareSkin(id) {
+/* the skin Nova wears, and its light or dark mode, for the Bridge window to match */
+function shareSkin(id, scheme) {
   const skin = typeof id === "string" && /^[a-z0-9-]{1,40}$/.test(id) ? id : "nova";
+  const look = JSON.stringify({ skin, theme: scheme === "light" ? "light" : "dark" });
   const dir = BRIDGE_HOME();
   try {
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, "skin.json");
     let current = null;
-    try { current = JSON.parse(fs.readFileSync(file, "utf8")).skin; } catch {}
-    if (current !== skin) fs.writeFileSync(file, JSON.stringify({ skin }), { mode: 0o600 });
+    try { current = fs.readFileSync(file, "utf8"); } catch {}
+    if (current !== look) fs.writeFileSync(file, look, { mode: 0o600 });
   } catch (e) { console.warn("Nova: could not share the skin with the Bridge:", e.message); }
 }
 
@@ -238,9 +239,9 @@ else {
   /* Nova's page may ask for only these things, and only Nova's own page */
   const fromNova = (e) => !!nova && e.sender === nova && e.senderFrame === nova.mainFrame && String(e.senderFrame.url).startsWith(ORIGIN + "/");
   ipcMain.handle("nova:start-bridge", (e) => (fromNova(e) ? startBridge() : undefined));
-  ipcMain.handle("nova:skin", (e, id) => { if (fromNova(e)) { shareSkin(id); look.skin = typeof id === "string" ? id : "nova"; sendLook(); } });
+  ipcMain.handle("nova:skin", (e, id) => { if (fromNova(e)) { look.skin = typeof id === "string" ? id : "nova"; shareSkin(look.skin, look.scheme); sendLook(); } });
   ipcMain.handle("nova:icon", (e, id) => { if (fromNova(e)) skinIcon(typeof id === "string" ? id : "nova", win); });
-  ipcMain.handle("nova:scheme", (e, scheme) => { if (fromNova(e)) { look.scheme = scheme === "light" ? "light" : "dark"; sendLook(); } });
+  ipcMain.handle("nova:scheme", (e, scheme) => { if (fromNova(e)) { look.scheme = scheme === "light" ? "light" : "dark"; shareSkin(look.skin, look.scheme); sendLook(); } });
   /* Update (the "A new update is available" prompt): the installer, the AppImage and the
      .deb download the new release from GitHub and restart into it (electron-updater,
      reading app-update.yml from the package; a .deb asks for the admin password).

@@ -14,10 +14,11 @@ export function PersonaTab({ personas, current, username = "You", onPick, onEdit
   const active = list.some((p) => p.id === current);
   return (
     <div className="p-4 rounded-3xl nv-glass space-y-2">
-      {!list.length ? (
-        <p className="text-sm text-zinc-400 px-1">No personas yet. You play as {username}.</p>
-      ) : (
-        !active && <p className="text-sm text-zinc-400 px-1">Playing as yourself.</p>
+      {!active && (
+        <div className="flex items-center gap-2 px-1">
+          <p className="text-sm text-zinc-400 flex-1 min-w-0">{list.length ? "Playing as yourself" : "No personas yet. You play as yourself"}: {username}.</p>
+          <Button type="button" size="sm" variant="ghost" onClick={() => onPick("")}>Change name</Button>
+        </div>
       )}
       {list.length > 0 && (
         <MotionList className="space-y-2">

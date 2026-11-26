@@ -22,5 +22,5 @@ contextBridge.exposeInMainWorld('bridge', {
  tray:async on=>{if(typeof on==='boolean'){calls.push(['tray',on]);trayOn=on;}return trayOn;},
  autostart:async on=>{if(typeof on==='boolean'){calls.push(['autostart',on]);autostartOn=on;}return autostartOn;},
  closeConfirmed:async()=>{}, onConfirmClose:fn=>{confirm=fn;},
- confirmForTest:()=>confirm(state), callsForTest:()=>calls, setSkinForTest:s=>{state={...state,skin:s};}
+ confirmForTest:()=>confirm(state), callsForTest:()=>calls, setSkinForTest:(s,theme)=>{state={...state,skin:s,theme};}
 });

@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 700" fill="none" stroke-linecap="round">
+  <!-- Holo's Prism Fold, still: thin strips of light bent over black chrome, split red and cyan at their edges -->
+  <defs>
+    <linearGradient id="spectrum" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#ff4f9a"/>
+      <stop offset=".3" stop-color="#ffc978"/>
+      <stop offset=".55" stop-color="#8cf5b4"/>
+      <stop offset=".8" stop-color="#5fd6ff"/>
+      <stop offset="1" stop-color="#a284ff"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="7"/></filter>
+    <filter id="pocket" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="34"/></filter>
+    <path id="a" d="M-30 600C80 560 110 420 200 360S350 260 460 120"/>
+    <path id="b" d="M-30 470C60 470 90 560 190 590S360 560 460 640"/>
+  </defs>
+  <!-- the pocket the strips bend around -->
+  <ellipse cx="40" cy="250" rx="70" ry="190" fill="#1a8aa0" opacity=".38" filter="url(#pocket)"/>
+  <ellipse cx="400" cy="560" rx="80" ry="150" fill="#6a3fb8" opacity=".3" filter="url(#pocket)"/>
+  <use href="#a" stroke="url(#spectrum)" stroke-width="12" opacity=".4" filter="url(#glow)"/>
+  <use href="#a" stroke="#ff3d7f" stroke-width="1.4" opacity=".75" transform="translate(-2 0)"/>
+  <use href="#a" stroke="#4fd8ff" stroke-width="1.4" opacity=".8" transform="translate(2 0)"/>
+  <use href="#a" stroke="url(#spectrum)" stroke-width="1.6"/>
+  <use href="#b" stroke="url(#spectrum)" stroke-width="9" opacity=".28" filter="url(#glow)"/>
+  <use href="#b" stroke="#ff3d7f" stroke-width="1.1" opacity=".6" transform="translate(-1.5 0)"/>
+  <use href="#b" stroke="#4fd8ff" stroke-width="1.1" opacity=".65" transform="translate(1.5 0)"/>
+  <use href="#b" stroke="url(#spectrum)" stroke-width="1.2" opacity=".85"/>
+</svg>

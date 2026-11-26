@@ -3,7 +3,7 @@ import { MOTION, enter, motionMode, pop, set, stop, tween } from "../components/
 import { MotionList } from "../components/motion/MotionList.jsx";
 import { Suspense, lazy, memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AlignLeft, BookMarked, Globe, Grid2x2, MessageSquarePlus, MoreHorizontal, MoreVertical, Pencil, Play, Plus, Rows3, Search, Sparkles, Trash2, Upload, User, Users, X } from "lucide-react";
-import { PersonaPicker } from "../components/PersonaPicker.jsx";
+import { NamePrompt, PersonaPicker } from "../components/PersonaPicker.jsx";
 import { AccBtn, ActionMenu, Avatar, Button, EmptyState, Field, Modal, MoreBtn, Segmented, Skeleton, TextInput, TopBar, selStyle } from "../components/ui.jsx";
 import { Media } from "../components/media.jsx";
 import { useReorder } from "../components/reorder.js";
@@ -133,10 +133,16 @@ export function CreatePage({ data, update, onEdit, startChat, startGroupChat, op
   const match = (name, desc) =>
     !q.trim() || `${name || ""} ${desc || ""}`.toLowerCase().includes(q.trim().toLowerCase());
 
-  const begin = (kind, item, personaId) => {
+  /* playing as yourself asks for a name first (NamePrompt); `userName`
+     is "" when it was skipped */
+  const [naming, setNaming] = useState(null);
+  const begin = (kind, item, personaId, userName) => {
     setPicking(null);
-    if (kind === "group") startGroupChat(item, personaId);
-    else startChat(kind, item, personaId);
+    if (!personaId && userName === undefined) { setNaming({ kind, item }); return; }
+    setNaming(null);
+    const extra = personaId ? {} : { userName };
+    if (kind === "group") startGroupChat(item, personaId, extra);
+    else startChat(kind, item, personaId, extra);
   };
   /* the group being put together: { memberIds, name } */
   const [grouping, setGrouping] = useState(null);
@@ -547,6 +553,12 @@ export function CreatePage({ data, update, onEdit, startChat, startGroupChat, op
           personas={data.personas}
           onPick={(id) => begin(picking.kind, picking.item, id)}
           onClose={() => setPicking(null)}
+        />
+      )}
+      {naming && (
+        <NamePrompt
+          onUse={(name) => begin(naming.kind, naming.item, "", name)}
+          onCancel={() => begin(naming.kind, naming.item, "", "")}
         />
       )}
     </div>

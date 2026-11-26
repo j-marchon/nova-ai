@@ -1,4 +1,4 @@
-import { officialSkinOf } from "./official.js";
+import { BUNDLED_IDS, officialSkinOf } from "./official.js";
 import { SkinError, compareVersions, isPackId, packMeta, readPack } from "./pack.js";
 
 /* ---------- the skins on this device ----------
@@ -93,7 +93,8 @@ export async function packBytes(id) {
 /* Adds a skin from its zip. Throws a SkinError the person can read.
    `onlyNewer` (backups, sync) leaves a skin alone unless this copy is a
    newer version; adding a file by hand always replaces it.
-   Returns { meta, status: "added" | "updated" | "same" | "older" }. */
+   Returns { meta, status: "added" | "updated" | "same" | "older" | "bundled" }
+   ("bundled": a skin that comes with the app, left out, meta null). */
 export async function installPack(input, { onlyNewer = false, expect = null } = {}) {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
   /* only the published files (official.js); `expect` names the skin the
@@ -102,6 +103,8 @@ export async function installPack(input, { onlyNewer = false, expect = null } = 
   if (!official || (expect && official !== "*" && official !== expect)) {
     throw new SkinError(expect ? "That file is not this skin. Pick the .zip you got as a supporter, as it is, without unzipping it." : "That is not a published Nova skin.");
   }
+  /* a skin that comes with the app is never stored */
+  if (BUNDLED_IDS.includes(official)) return { meta: null, status: "bundled" };
   const pack = readPack(bytes);
   const meta = packMeta(pack);
   const had = installedSkins().find((m) => m.id === meta.id);
@@ -122,6 +125,8 @@ export async function removePack(id) {
 /* The list and the database can only disagree if site data was half
    cleared; at startup, drop what the database no longer has. */
 export async function reconcileSkins() {
+  /* copies of the skins that now come with the app, stored by older versions */
+  for (const m of installedSkins().filter((x) => BUNDLED_IDS.includes(x.id))) await removePack(m.id).catch(() => {});
   const list = installedSkins();
   if (!list.length) return;
   const keep = [];

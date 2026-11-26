@@ -19,7 +19,7 @@ import { AccBtn, ActionMenu, Button, Modal, Pic, ScrollTabs, TextArea, useBackLa
 import { providerOf, short } from "../lib/api.js";
 import { fileSafe, fillNames, saveFile } from "../lib/cards.js";
 import { chatToJsonl } from "../lib/chatFile.js";
-import { DEFAULT_AUTHORS_NOTE, DEFAULT_HISTORY_TOKENS, addBookmark, bgListOf, castBgListOf, createChatBranch, greetingsOf, removeBookmark, themeOf } from "../lib/data.js";
+import { DEFAULT_AUTHORS_NOTE, DEFAULT_HISTORY_TOKENS, addBookmark, bgListOf, castBgListOf, createChatBranch, greetingsOf, removeBookmark, themeOf, userNameOf } from "../lib/data.js";
 import { activeSummary, afterDeleting, cleanNote, keepIfCovered, memoryConflicts, memoryCovered, memoryOffEverywhere, sceneHead } from "../lib/memory.js";
 import { MemoryConflict } from "../components/MemoryConflict.jsx";
 import { buildSceneVisualPrompt } from "../lib/imageGen.js";
@@ -47,6 +47,7 @@ import { createStreamStore, useStream, useStableActions } from "./chat/streamSto
 import { useFollow } from "./chat/follow.js";
 import { NotesTab } from "./chat/NotesTab.jsx";
 import { PersonaTab } from "./chat/PersonaTab.jsx";
+import { NamePrompt } from "../components/PersonaPicker.jsx";
 import { removeWithUndo } from "../lib/removal.js";
 
 import { activity, cancelWhere, takeActivityResult, useActivity, useActivityFocus } from "../lib/activity.js";
@@ -113,9 +114,11 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit, 
   /* Bubble colours and backdrop belong to whoever you are talking to: the
      universe, or the chat's own character (the host, with an ensemble). */
   const theme = themeOf(isUni ? universe : character);
-  const userName = persona?.name || data.username || "You";
+  const userName = userNameOf(data, chat, persona);
 
   const [lightboxUrl, setLightboxUrl] = useState(null);
+  /* playing as yourself again: ask the name for this chat (NamePrompt) */
+  const [naming, setNaming] = useState(false);
   /* the message box owns the draft (chat/Composer.jsx); this reaches it */
   const composerRef = useRef(null);
   const [speakingMsgId, setSpeakingMsgId] = useState(null);
@@ -1791,13 +1794,20 @@ function ChatView({ data, chatId, update, goBack, goSettings, openChat, onEdit, 
             <PersonaTab
               personas={data.personas}
               current={chat.personaId || ""}
-              username={data.username || "You"}
-              onPick={(id) => patchChat({ personaId: id })}
+              username={userNameOf(data, chat, null)}
+              onPick={(id) => (id ? patchChat({ personaId: id }) : setNaming(true))}
               /* the Create tab's persona form, over this sheet (App.jsx);
                  saving or closing it comes back here */
               onEdit={(p) => onEdit?.("personas", p)}
               onNew={() => onEdit?.("personas", null, (saved) => patchChat({ personaId: saved.id }))}
               onRemove={(p) => removeWithUndo({ data, update, type: "personas", item: p })}
+            />
+          )}
+          {naming && (
+            <NamePrompt
+              initial={chat.userName ?? data.username ?? ""}
+              onUse={(name) => { setNaming(false); patchChat({ personaId: "", userName: name }); }}
+              onCancel={() => { setNaming(false); patchChat({ personaId: "", userName: "" }); }}
             />
           )}
           {chatSettings === "bookmarks" && (

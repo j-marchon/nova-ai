@@ -9,7 +9,7 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         // versionCode only ever goes up (an installed build refuses a lower one).
         // versionName comes from package.json, the one place the version is set.
-        versionCode 25
+        versionCode 26
         versionName new groovy.json.JsonSlurper().parse(rootProject.file("../../package.json")).version
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {

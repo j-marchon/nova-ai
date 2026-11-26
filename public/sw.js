@@ -13,7 +13,13 @@ self.addEventListener("fetch", event => {
   const request = event.request;
   const url = new URL(request.url);
   if (request.method !== "GET" || url.origin !== self.location.origin) return;
-  event.respondWith(fetch(request).catch(async () => {
+  /* the bundled skin zips stay out of the install cache (17 MB); each is
+     kept here once fetched, so a skin worn online still works offline */
+  const keep = url.pathname.endsWith(".zip");
+  event.respondWith(fetch(request).then(res => {
+    if (keep && res.ok) { const copy = res.clone(); event.waitUntil(caches.open(CACHE).then(cache => cache.put(request, copy))); }
+    return res;
+  }).catch(async () => {
     const cache = await caches.open(CACHE);
     const hit = await cache.match(request);
     return hit || (request.mode === "navigate" ? await cache.match("/index.html") : null) || Response.error();

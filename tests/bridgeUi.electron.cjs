@@ -63,6 +63,13 @@ if (!process.versions.electron) {
    await js('bridge.setSkinForTest("aero")');
    await wait('document.documentElement.dataset.skin === "aero"');
    assert.equal(await js('getComputedStyle(document.querySelector(".skyline")).display'),'block');
+   /* Holo, in the app's mode */
+   await js('bridge.setSkinForTest("holo","light")');
+   await wait('document.documentElement.dataset.skin === "holo" && document.documentElement.dataset.theme === "light"');
+   assert.equal(await js('getComputedStyle(document.querySelector(".fold")).display'),'block');
+   assert.equal(await js('getComputedStyle(document.querySelector(".skyline")).display'),'none');
+   await js('bridge.setSkinForTest("holo","dark")');
+   await wait('document.documentElement.dataset.theme === "dark"');
    await js('document.querySelector("#minimize").click()');
    assert.ok(await js('(async()=>(await bridge.callsForTest()).some(c=>c[0]==="window"&&c[1]==="minimize"))()'));
    await js('bridge.confirmForTest()'); await wait('document.querySelector("#close-dialog").open');

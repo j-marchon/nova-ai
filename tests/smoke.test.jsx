@@ -241,7 +241,7 @@ describe("chat", () => {
     await flush();
     expect(Harness.data.chats[0].scene?.text).toMatch(/^Note \d$/);
     await click(byLabel("Chat settings"));
-    expect(textOf()).toContain("No personas yet. You play as Ana.");
+    expect(textOf()).toContain("No personas yet. You play as yourself: Ana.");
     await click([...host.querySelectorAll('button[aria-pressed]')].find((b) => b.textContent === "Memory"));
     expect(textOf()).toContain("Story so far");
     const notes = [...host.querySelectorAll("textarea")].map((t) => t.value);
@@ -290,6 +290,9 @@ describe("several of your characters in one chat", () => {
     await click(pick("Mira"));
     await click(pick("Tom"));
     await click([...host.querySelectorAll("button")].find((b) => b.textContent === "Start group chat"));
+    /* no persona: the name for this chat is asked first */
+    await type(document.querySelector("input[aria-label='Your name']"), "Ana");
+    await click([...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Use"));
     for (let i = 0; i < 100 && !host.querySelector(".nv-chat-root"); i++) await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
     expect(host.querySelector(".nv-chat-root")).toBeTruthy();
     await act(async () => { await new Promise((r) => setTimeout(r, 500)); });
@@ -415,6 +418,7 @@ describe("screens", () => {
     await click(pick("Mira"));
     await click(pick("Tom"));
     await click([...host.querySelectorAll("button")].find((b) => b.textContent === "Start group chat"));
+    await click([...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Cancel"));
     expect(started[0].memberIds).toEqual(["c1", "c2"]);
   });
 

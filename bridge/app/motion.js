@@ -1,5 +1,6 @@
 /* The Bridge window's motion: its living field (Nova's lamp over the grid
-   and the odd star, or Aero's drifting clouds and rising bubbles), cards
+   and the odd star, Aero's drifting clouds and rising bubbles, or Holo's
+   swaying prism strips and crossing spectrum), cards
    arriving, rows coming and going, presses. Web Animations only, transform
    and opacity only; reduced motion keeps the field still and arrivals to a
    fade. Nothing here reads or changes what the Bridge does. */
@@ -109,13 +110,30 @@
     }
   }
 
+  /* Holo: the prism strips sway and breathe over the chrome; now and then a
+     band of spectrum crosses the window */
+  function holoField() {
+    if (!full()) return;
+    field.push(document.querySelector(".fold").animate([
+      { transform: "translate(-12px, 8px) rotate(-1.5deg) scale(1.02)" },
+      { transform: "translate(6px, -4px) rotate(.5deg) scale(1.06)", offset: .55 },
+      { transform: "translate(14px, -10px) rotate(1.5deg) scale(1.04)" },
+    ], { duration: 38000, iterations: Infinity, direction: "alternate", easing: "ease-in-out" }));
+    field.push(document.querySelector(".sweep").animate([
+      { transform: "translateX(-100%)", opacity: 0 },
+      { opacity: 1, offset: .08 },
+      { transform: "translateX(100%)", opacity: 0, offset: .2 },
+      { transform: "translateX(100%)", opacity: 0 },
+    ], { duration: 16000, delay: 2500, iterations: Infinity, easing: "cubic-bezier(.45, 0, .55, 1)" }));
+  }
+
   function startField() {
     for (const a of field) a.cancel();
     field = [];
     clearTimeout(flareTimer);
     document.querySelectorAll(".flare").forEach((f) => f.remove());
     /* Minimal is still: no field at all */
-    if (skin() === "aero") aeroField(); else if (skin() !== "minimal") novaField();
+    if (skin() === "aero") aeroField(); else if (skin() === "holo") holoField(); else if (skin() !== "minimal") novaField();
   }
 
   function enter(el, delay = 0) {

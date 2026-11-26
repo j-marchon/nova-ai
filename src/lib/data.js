@@ -295,6 +295,11 @@ export const emptyData = {
   },
 };
 
+/* What the characters call you in a chat: the persona's name, else the name
+   given when the chat started without one (chat.userName, "" for none), else
+   the old app-wide name for chats made before that existed. */
+export const userNameOf = (data, chat, persona) => persona?.name || (chat?.userName ?? data?.username) || "You";
+
 export const SCHEMES = ["dark", "light", "auto"];
 export const MOTIONS = ["full", "calm", "off"];
 /* backdrops dropped in 2.5, which fall back to plain black */

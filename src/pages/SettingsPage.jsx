@@ -5,28 +5,29 @@ import { version } from "../../package.json";
 import { shortVersion } from "../lib/updates.js";
 import { useEffect, useRef, useState } from "react";
 import {
-  Brain, Check, Cpu, Activity, Lock, MessageCircle, MessagesSquare, Monitor, Moon,
-  Palette, Pause, RectangleHorizontal, Sparkles, Sun, User, Waves, Zap,
+  Brain, Check, Cpu, Activity, Download, HardDrive, Info, Lock, MessageCircle, MessagesSquare, Monitor, Moon,
+  Palette, Pause, RectangleHorizontal, Sparkles, Sun, Waves, Zap,
 } from "lucide-react";
 import { AccountPanel, fmtNum } from "../components/AccountPanel.jsx";
 import { BackupPanel } from "../components/BackupPanel.jsx";
-import { UpdatePanel } from "../components/UpdatePanel.jsx";
+import { ChangelogList, UpdatePanel } from "../components/UpdatePanel.jsx";
+import { AboutPanel } from "../components/AboutPanel.jsx";
 import { SyncPanel } from "../components/SyncPanel.jsx";
 import { BridgeUsage } from "../components/BridgeUsage.jsx";
 import { StyleChips } from "../components/StylePicker.jsx";
 import { ModelList, useEndpointLabel } from "../components/models.jsx";
 import { NovaBridgeCard, ProvidersPanel } from "../components/ProvidersPanel.jsx";
 import { VoiceSection } from "../components/VoiceSection.jsx";
-import { Button, Field, ScrollTabs, Segmented, Slider, TextArea, TextInput, ToggleRow, TopBar, inputCls, selStyle, useNeedsSetup } from "../components/ui.jsx";
+import { Button, Field, ScrollTabs, Segmented, Slider, TextArea, ToggleRow, TopBar, inputCls, selStyle, useNeedsSetup } from "../components/ui.jsx";
 import { hasKey } from "../lib/api.js";
 import { DEFAULT_HISTORY_TOKENS, MAX_HISTORY_TOKENS } from "../lib/data.js";
 import { bannedList } from "../lib/prompt.js";
 import { SUPPORTED_LANGUAGES } from "../lib/translate.js";
-import { STANDARD, SUPPORT_URL, canWear, isBuiltInSkin, loadSkin, sceneSetOf, skinList, skinOf, skinScheme, skinTileArt } from "../skins/skins.js";
-import { SkinTile } from "../skins/SkinTile.jsx";
-import { iconChoices, iconFor, iconPick, iconSrc } from "../skins/icons.js";
+import { STANDARD, SUPPORT_URL, canWear, isBuiltInSkin, isBundledSkin, loadSkin, sceneSetOf, skinList, skinOf, skinScheme, skinTileArt } from "../skins/skins.js";
 import { MAX_ZIP_BYTES, SkinError } from "../skins/pack.js";
 import { installPack, removePack } from "../skins/store.js";
+import { SkinTile } from "../skins/SkinTile.jsx";
+import { iconChoices, iconFor, iconPick, iconSrc } from "../skins/icons.js";
 import { useInstalledSkins, useLoadedSkins } from "../components/useSkin.js";
 
 /* A solid section with a concise label. */
@@ -46,11 +47,12 @@ function Block({ label, aside, children, i = 0 }) {
 }
 
 /* ---------- skins ----------
-   The whole look, chosen here (skins/skins.js): the two that come with the
-   app (Nova, Minimal), then every supporter skin. One not unlocked on this
-   device shows locked; tapping it asks for its .zip, which is checked
-   against the published file (skins/official.js) and kept on this device,
-   so the download can go. No other file can be added. */
+   The whole look, chosen here (skins/skins.js): the two built in (Nova,
+   Minimal), the packs that come with the app (Aero, Holo), then every paid
+   skin. One not unlocked on this device shows locked; tapping it asks for
+   its .zip, which is checked against the published file (skins/official.js)
+   and kept on this device, so the download can go. No other file can be
+   added. There are no paid skins yet (PAID_SKINS). */
 const SKIN_FILES = ".zip,application/zip,application/x-zip-compressed,application/octet-stream";
 
 function SkinPicker({ value, onChange }) {
@@ -133,7 +135,7 @@ function SkinPicker({ value, onChange }) {
       />
       <div className="flex flex-wrap items-center gap-2">
         {busy && <p role="status" className="text-xs text-zinc-400">Checking the file…</p>}
-        {picked && !isBuiltInSkin(picked.id) && !picked.locked && (removing === picked.id ? (
+        {picked && !isBuiltInSkin(picked.id) && !isBundledSkin(picked.id) && !picked.locked && (removing === picked.id ? (
           <span className="flex items-center gap-2">
             <Button variant="danger" size="sm" onClick={() => remove(picked)}>Remove {picked.name}</Button>
             <Button variant="ghost" size="sm" onClick={() => setRemoving(null)}>Keep</Button>
@@ -315,21 +317,23 @@ export function AppearancePanel({ ap, onChange }) {
 /* Nova Bridge: the Bridge itself, its sync and backups. Model: the
    providers and their keys, then the model to use. */
 const TABS = [
+  { id: "about", label: "About", icon: Info },
   { id: "bridge", label: "Nova Bridge", icon: Zap },
   { id: "model", label: "Model", icon: Cpu },
   { id: "replies", label: "Replies", icon: MessageCircle },
   { id: "memory", label: "Memory", icon: Brain },
   { id: "look", label: "Look", icon: Palette },
   { id: "usage", label: "Usage", icon: Zap },
-  { id: "profile", label: "You", icon: User },
+  { id: "backup", label: "Backup", icon: HardDrive },
+  { id: "update", label: "Update", icon: Download },
 ];
 
 export function SettingsPage({ data, update }) {
   const s = data.settings;
   const needsSetup = useNeedsSetup(s);
   const ap = data.appearance;
-  /* Model first: a fresh install adds a provider there */
-  const [tab, setTab] = useState("model");
+  /* About first, unless a fresh install still has to add a provider */
+  const [tab, setTab] = useState(() => (needsSetup ? "model" : "about"));
   const setS = (patch) => update(d => ({ ...d, settings: { ...d.settings, ...patch } }));
   const endpoint = useEndpointLabel(s);
   const bans = bannedList(s.bannedPhrases).length;
@@ -528,21 +532,14 @@ export function SettingsPage({ data, update }) {
           <AccountPanel settings={s} ledger={data.ledger} />
         ))}
 
-        {tab === "profile" && (
-          /* two columns of their own on a wide window, so a short panel
-             never leaves a gap beside a tall one */
-          <div className="nv-settings-stage space-y-3 xl:space-y-0">
-            <div className="space-y-3 min-w-0">
-              <div className="p-4 sm:p-5 nv-block">
-                <Field label="Your name">
-                  <TextInput value={data.username} onChange={(e) => update({ username: e.target.value })} placeholder="What characters call you" />
-                </Field>
-              </div>
-              <BackupPanel data={data} update={update} />
-            </div>
-            <div className="space-y-3 min-w-0">
-              <UpdatePanel data={data} update={update} />
-            </div>
+        {tab === "about" && <AboutPanel />}
+
+        {tab === "backup" && <BackupPanel data={data} update={update} />}
+
+        {tab === "update" && (
+          <div className="space-y-3">
+            <UpdatePanel data={data} update={update} />
+            <ChangelogList />
           </div>
         )}
 

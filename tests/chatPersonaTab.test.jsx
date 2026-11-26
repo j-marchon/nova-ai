@@ -94,10 +94,15 @@ describe("chat Persona tab", () => {
     expect(row("Bram").getAttribute("aria-pressed")).toBe("true");
     expect(row("Edda").getAttribute("aria-pressed")).toBe("false");
     await click(row("Bram"));
-    expect(row("Bram").getAttribute("aria-pressed")).toBe("false");
-    expect(document.body.textContent).toContain("Playing as yourself");
+    /* playing as yourself asks for this chat's name first */
+    await vi.waitFor(() => expect(document.body.textContent).toContain("Your name in this chat"));
+    await type(document.querySelector("input[aria-label='Your name']"), "Kit");
+    await click(buttons().filter((b) => b.textContent.trim() === "Use").at(-1));
+    await vi.waitFor(() => expect(row("Bram").getAttribute("aria-pressed")).toBe("false"));
+    expect(document.body.textContent).toContain("Playing as yourself: Kit");
     const d = await saved();
     expect(chatOf(d).personaId).toBe("");
+    expect(chatOf(d).userName).toBe("Kit");
     expect(chatOf(d, "c2").personaId).toBe("p1");
   });
 

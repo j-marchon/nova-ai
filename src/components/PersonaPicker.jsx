@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { Check } from "lucide-react";
-import { Avatar, Modal, selStyle } from "./ui.jsx";
+import { Avatar, Button, Modal, TextInput, selStyle } from "./ui.jsx";
 
 /* one choice in the picker; outside PersonaPicker so it is not a new
    component type, and remounted, on every render */
@@ -34,6 +35,24 @@ export function PersonaPicker({ personas, username = "You", current, onPick, onC
           <Item key={p.id} id={p.id} name={p.name} sub={p.description || "No description"} on={current === p.id} onChoose={choose} />
         ))}
       </div>
+    </Modal>
+  );
+}
+
+/* Playing as yourself (no persona): the name the characters call you in
+   this chat. Use keeps the typed name; Cancel plays on without one. */
+export function NamePrompt({ initial = "", onUse, onCancel }) {
+  const [name, setName] = useState(initial);
+  const use = () => (name.trim() ? onUse(name.trim()) : onCancel());
+  return (
+    <Modal title="Your name in this chat" onClose={onCancel} scrimCloses={false}>
+      <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); use(); }}>
+        <TextInput autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="What characters call you" aria-label="Your name" maxLength={80} />
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
+          <Button type="button" variant="primary" onClick={use}>Use</Button>
+        </div>
+      </form>
     </Modal>
   );
 }

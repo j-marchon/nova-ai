@@ -40,10 +40,10 @@ const click = async (el) => { await act(async () => el.click()); await flush(); 
 const btn = (text, scope = document) => [...scope.querySelectorAll("button")].find((b) => b.textContent.includes(text));
 
 describe("tab order", () => {
-  it("Settings tabs end with You, Usage before it", async () => {
+  it("Settings tabs open with About and end with Backup and Update", async () => {
     await mount(<SettingsPage data={emptyData} update={() => {}} />);
     const labels = [...host.querySelectorAll("[aria-label='Settings tabs'] button")].map((b) => b.textContent.trim());
-    expect(labels).toEqual(["Nova Bridge", "Model", "Replies", "Memory", "Look", "Usage", "You"]);
+    expect(labels).toEqual(["About", "Nova Bridge", "Model", "Replies", "Memory", "Look", "Usage", "Backup", "Update"]);
   });
 
   it("Create tabs run characters, universes, personas, lorebooks, with no Social tab", async () => {

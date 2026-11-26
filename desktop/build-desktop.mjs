@@ -44,6 +44,7 @@ for (const f of ["host.cjs", "preload.cjs", "renderer.js", "motion.js"]) {
   await copyFile(path.join(ROOT, "bridge", "app", f), path.join(STAGE, "bridge-app", f));
 }
 await cp(path.join(ROOT, "bridge", "app", "aero"), path.join(STAGE, "bridge-app", "aero"), { recursive: true });
+await cp(path.join(ROOT, "bridge", "app", "holo"), path.join(STAGE, "bridge-app", "holo"), { recursive: true });
 await copyFile(path.join(ROOT, "src/assets/fonts/OverusedGroteskRoman-VF.woff2"), path.join(STAGE, "bridge-app/vendor/font.woff2"));
 await copyFile(path.join(ROOT, "public/icon-192.png"), path.join(STAGE, "bridge-app/vendor/icon-192.png"));
 const page = (await readFile(path.join(ROOT, "bridge", "app", "index.html"), "utf8"))

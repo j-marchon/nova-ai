@@ -21,7 +21,7 @@ import { ChatSkeleton, NovaMark, useNeedsSetup, PageSkeleton, ScreenSkeleton, to
 import { findBridgeOnce, pageHost } from "./lib/bridgeFind.js";
 import { activeProvider, patchProvider } from "./lib/providers.js";
 import { saveFile, fillNames } from "./lib/cards.js";
-import { DEFAULT_AUTHORS_NOTE, greetingsOf } from "./lib/data.js";
+import { DEFAULT_AUTHORS_NOTE, greetingsOf, userNameOf } from "./lib/data.js";
 import { castMember } from "./lib/scope.js";
 import { emptyHandset } from "./lib/phone.js";
 import { askForPersistence, loadData, saveData } from "./lib/storage.js";
@@ -344,7 +344,7 @@ function Nova({ data, setData }) {
        card later cannot quietly change what an open chat thinks it shows. */
     const greets = greetingsOf(item);
     const g = greets[0];
-    const userName = data.personas.find((p) => p.id === personaId)?.name || data.username || "You";
+    const userName = userNameOf(data, extra, data.personas.find((p) => p.id === personaId));
     const chat = {
       id: uid(),
       kind,
@@ -374,7 +374,7 @@ function Nova({ data, setData }) {
   /* A group chat is a chat with the first character picked (the host: its
      opening, look and lorebook), with Nova Scope already on and the others
      in its cast, linked to their cards so each one's whole card is sent. */
-  const startGroupChat = ({ memberIds, name }, personaId) => {
+  const startGroupChat = ({ memberIds, name }, personaId, extra = {}) => {
     const picked = (memberIds || []).map((id) => data.characters.find((c) => c.id === id)).filter(Boolean);
     if (!picked.length) return;
     const [host, ...rest] = picked;
@@ -382,6 +382,7 @@ function Nova({ data, setData }) {
     startChat("character", host, personaId, {
       scope: { mode, carry: true, cast: rest.map((c) => castMember({ id: uid(), name: c.name, characterId: c.id })) },
       ...(name?.trim() ? { title: name.trim() } : {}),
+      ...extra,
     });
   };
 
