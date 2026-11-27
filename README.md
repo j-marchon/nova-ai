@@ -17,7 +17,7 @@
 
 ---
 
-Nova is a browser-first roleplay chat app that connects to your own AI providers (OpenRouter, Google Gemini, a local server, or Nova Bridge) and keeps every character, chat and setting on the device. It runs three ways from one codebase: **the browser**, an **Android app** (Capacitor) and a **desktop shell** (Electron for Windows and Linux).
+Nova is a roleplay chat app that connects to your own AI providers (OpenRouter, Google Gemini, a local server, or Nova Bridge) and keeps every character, chat and setting on the device. It runs three ways from one codebase: **the browser**, an **Android app** (Capacitor) and a **desktop shell** (Electron for Windows and Linux).
 
 ## ✨ Features
 
