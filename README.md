@@ -23,7 +23,6 @@ Nova is a browser-first roleplay chat app that connects to your own AI providers
 | | |
 |---|---|
 | 🎭 **Roleplay chat** | One-on-one, groups (Nova Scope) and whole worlds (Universes) with a World sheet |
-| 📱 **Phone-first** | Smooth on a Galaxy A14; works just as well on desktop with a full side-panel layout |
 | 🔌 **Bring your own provider** | OpenRouter, Google AI Studio, Gemini Web (via Nova Bridge), local/self-hosted, or any OpenAI-compatible endpoint |
 | 🌉 **Nova Bridge** | A local gateway that lets Nova use a Gemini account's models with no API key — runs as its own desktop app or alongside the desktop shell |
 | 🃏 **SillyTavern compatible** | Import and export character cards (PNG & JSON), presets, lorebooks, and chat files |
