@@ -12,6 +12,7 @@
   <a href="https://github.com/j-marchon/nova-releases/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/j-marchon/nova-releases?label=release&color=blue"></a>
   <a href="https://github.com/j-marchon/nova-releases/releases/latest"><img alt="Downloads" src="https://img.shields.io/github/downloads/j-marchon/nova-releases/total?label=downloads&color=brightgreen"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-blue"></a>
+  <a href="https://ko-fi.com/bjmar"><img alt="Support on Ko-fi" src="https://img.shields.io/badge/Ko--fi-support%20Nova-FF5E5B?logo=ko-fi&logoColor=white"></a>
 </p>
 
 ---
